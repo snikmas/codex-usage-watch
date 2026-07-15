@@ -23,6 +23,7 @@ done
 
 ACTUAL_REF="$(git -C "$SOURCE" rev-parse HEAD)"
 EXPECTED_REF="$(git -C "$SOURCE" rev-parse "$REF^{commit}")"
+TRACKER_RELEASE="$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/Cargo.toml" | head -n 1)"
 [[ "$ACTUAL_REF" == "$EXPECTED_REF" ]] || {
   echo "Codex checkout must already be at requested ref $REF; this script will not mutate it" >&2
   exit 2
@@ -37,7 +38,7 @@ SHA256="$(sha256sum "$OUTPUT/codex-$SUFFIX" | awk '{print $1}')"
 cat >"$OUTPUT/codex-$SUFFIX.build-info" <<EOF
 fork_release_suffix=$SUFFIX
 upstream_ref=$ACTUAL_REF
-tracker_release=0.1.0
+tracker_release=$TRACKER_RELEASE
 binary_sha256=$SHA256
 focused_test=just test -p codex-tui
 EOF

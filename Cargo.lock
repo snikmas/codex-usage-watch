@@ -61,7 +61,7 @@ dependencies = [
 
 [[package]]
 name = "codex-usage-watch"
-version = "0.1.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "chrono",
  "directories",

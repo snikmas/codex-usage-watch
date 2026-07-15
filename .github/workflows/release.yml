@@ -1,0 +1,40 @@
+name: Beta release
+
+on:
+  push:
+    tags: ["v*-beta.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  linux-x86_64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master, reviewed 2026-07-15
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - name: Verify tag and release gates
+        shell: bash
+        run: |
+          version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)"
+          test "$GITHUB_REF_NAME" = "v$version"
+          bash scripts/release-gate.sh
+      - name: Publish checksummed prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            target/release-dist/*.tar.gz \
+            target/release-dist/*.crate \
+            target/release-dist/SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Codex Usage Watch $GITHUB_REF_NAME" \
+            --notes-file docs/RELEASE_NOTES.md \
+            --prerelease \
+            --verify-tag

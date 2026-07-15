@@ -11,7 +11,13 @@ cargo build --manifest-path "$ROOT/Cargo.toml" --release --locked
 cargo package --manifest-path "$ROOT/Cargo.toml" --locked --allow-dirty
 mkdir -p "$DIST/$NAME"
 install -m 0755 "$ROOT/target/release/codex-5h" "$DIST/$NAME/codex-5h"
-install -m 0644 "$ROOT/README.md" "$ROOT/CHANGELOG.md" "$ROOT/LICENSE" "$DIST/$NAME/"
+install -m 0644 "$ROOT/README.md" "$ROOT/CHANGELOG.md" "$ROOT/LICENSE" \
+  "$ROOT/SECURITY.md" "$ROOT/CONTRIBUTING.md" "$DIST/$NAME/"
+install -d "$DIST/$NAME/docs"
+install -m 0644 "$ROOT"/docs/*.md "$DIST/$NAME/docs/"
+install -d "$DIST/$NAME/scripts"
+install -m 0755 "$ROOT/scripts/install.sh" "$ROOT/scripts/uninstall.sh" \
+  "$ROOT/scripts/verify-install.sh" "$DIST/$NAME/scripts/"
 tar -C "$DIST" -czf "$DIST/$NAME.tar.gz" "$NAME"
 cp "$ROOT/target/package/codex-usage-watch-$VERSION.crate" "$DIST/"
 rm -rf "$DIST/$NAME"

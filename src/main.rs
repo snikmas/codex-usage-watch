@@ -2,10 +2,12 @@ use std::io::{self, Read};
 use std::process::ExitCode;
 
 use chrono::Utc;
-use codex_usage_watch::hooks::{HookEvent, install_hooks, run_hook, uninstall_hooks};
+use codex_usage_watch::hooks::{
+    HookEvent, install_hooks, run_hook, uninstall_hooks, validate_installed_hooks,
+};
 use codex_usage_watch::{
-    CalibrationReport, StateStore, TrackerConfig, WindowStatus, cached_release_metadata,
-    import_history, preview_history,
+    CalibrationReport, DiscoveryOptions, IngestOptions, StateStore, TrackerConfig, WindowStatus,
+    cached_release_metadata, discover_recent_transcripts, import_history, preview_history,
 };
 
 const FAIL_OPEN_JSON: &str = r#"{"continue":true,"suppressOutput":true}"#;
@@ -23,6 +25,11 @@ fn main() -> ExitCode {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.as_slice() {
+        [] => print_help(),
+        [flag] if flag == "--help" || flag == "-h" || flag == "help" => print_help(),
+        [flag] if flag == "--version" || flag == "-V" || flag == "version" => {
+            println!("codex-5h {}", env!("CARGO_PKG_VERSION"));
+        }
         [command, event] if command == "hook" => {
             let event = HookEvent::parse(event).ok_or("unknown hook event")?;
             let mut input = String::new();
@@ -47,7 +54,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         [command] if command == "install" => install_hooks(false).map(|_| ())?,
         [command] if command == "uninstall" => uninstall_hooks(false).map(|_| ())?,
-        [command] if command == "status" => print_status()?,
+        [command] if command == "status" => print_status(false)?,
+        [command, flag] if command == "status" && flag == "--json" => print_status(true)?,
+        [command] if command == "refresh" => refresh(None)?,
+        [command, flag, transcript] if command == "refresh" && flag == "--transcript" => {
+            refresh(Some(std::path::Path::new(transcript)))?
+        }
         [command] if command == "history" => print_history(false)?,
         [command, flag] if command == "history" && flag == "--json" => print_history(true)?,
         [command] if command == "setup" => run_setup(SetupMode::Interactive)?,
@@ -77,17 +89,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             if command == "calibration" && action == "apply" && flag == "--confirm" =>
         {
             let value: f64 = value.parse()?;
-            let mut store = StateStore::open(TrackerConfig::default())?;
+            let mut store = StateStore::open(TrackerConfig::from_env()?)?;
             store.apply_calibration(value, Utc::now())?;
             println!("Applied calibration {value:.3} weekly points to future local windows only.");
         }
         [command, destination, flag] if command == "backup" && flag == "--confirm" => {
-            let store = StateStore::open(TrackerConfig::default())?;
+            let store = StateStore::open(TrackerConfig::from_env()?)?;
             store.backup_database(std::path::Path::new(destination))?;
             println!("Created consistent SQLite backup at {destination}");
         }
         [command, flag] if command == "reset" && flag == "--confirm" => {
-            let mut store = StateStore::open(TrackerConfig::default())?;
+            let mut store = StateStore::open(TrackerConfig::from_env()?)?;
             if store.reset_current_window(Utc::now())? {
                 println!(
                     "Archived the current local window. The next observation starts a new one."
@@ -97,13 +109,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         _ => {
-            return Err(
-                "usage: codex-5h setup [--preview|--skip-import|--import --confirm] | status | history [--json] | analyze [--json] | reset --confirm | doctor [--compat [--refresh-releases]] | calibration apply <weekly-points> --confirm | backup <destination.sqlite3> --confirm | hook <session-start|user-prompt-submit|stop> | install --confirm | uninstall --confirm"
-                    .into(),
-            );
+            return Err("invalid arguments; run codex-5h --help for commands and examples".into());
         }
     }
     Ok(())
+}
+
+fn print_help() {
+    println!(
+        "Codex Usage Watch {}\n\nLocal, non-blocking five-hour usage awareness. Estimates are not official quota or billing data.\n\nUSAGE:\n  codex-5h <COMMAND> [OPTIONS]\n\nCOMMANDS:\n  setup [--preview|--skip-import|--import --confirm]  Consent-first history setup\n  status [--json]                                    Show the current projection\n  refresh [--transcript PATH]                        Bounded refresh (at most 8 recent files)\n  history [--json]                                   Show recent windows and control events\n  analyze [--json]                                   Inspect calibration evidence\n  reset --confirm                                    Archive the current local window\n  doctor [--compat [--refresh-releases]]             Validate installation and compatibility\n  calibration apply POINTS --confirm                 Apply reviewed calibration to future windows\n  backup DESTINATION.sqlite3 --confirm               Create an integrity-checked database backup\n  install --confirm | uninstall --confirm            Add or remove only this tool's hooks\n\nOPTIONS:\n  -h, --help       Print help and exit 0\n  -V, --version    Print version and exit 0\n\nEXAMPLES:\n  codex-5h setup --preview\n  codex-5h status --json\n  codex-5h refresh\n  codex-5h doctor\n\nEXIT STATUS:\n  0 success; 2 invalid arguments, configuration, or runtime failure",
+        env!("CARGO_PKG_VERSION")
+    );
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -169,7 +185,7 @@ fn run_setup(mode: SetupMode) -> Result<(), Box<dyn std::error::Error>> {
         println!("Live collection      available after hook installation");
         return Ok(());
     }
-    let mut store = StateStore::open(TrackerConfig::default())?;
+    let mut store = StateStore::open(TrackerConfig::from_env()?)?;
     let summary = import_history(&mut store, &preview, Utc::now());
     println!("Imported files       {}", summary.imported_file_count);
     println!(
@@ -202,9 +218,22 @@ fn run_setup(mode: SetupMode) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn print_status() -> Result<(), Box<dyn std::error::Error>> {
-    let mut store = StateStore::open(TrackerConfig::default())?;
+fn print_status(json: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let config = TrackerConfig::from_env()?;
+    let mut store = StateStore::open(config.clone())?;
     let display = store.load_or_recover_display(Utc::now())?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "contract": "codex-usage-watch.status.v1",
+                "display": display,
+                "active_calibration_weekly_points": store.active_calibration(),
+                "warning_thresholds_percent": config.warning_thresholds(),
+            }))?
+        );
+        return Ok(());
+    }
     println!(
         "Five-hour estimate   {}",
         optional_percent(
@@ -236,8 +265,52 @@ fn print_status() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn refresh(transcript: Option<&std::path::Path>) -> Result<(), Box<dyn std::error::Error>> {
+    let now = Utc::now();
+    let mut store = StateStore::open(TrackerConfig::from_env()?)?;
+    let paths = if let Some(path) = transcript {
+        vec![path.to_path_buf()]
+    } else {
+        discover_recent_transcripts(
+            &codex_home().join("sessions"),
+            now,
+            DiscoveryOptions {
+                lookback_days: 2,
+                max_files: 8,
+                max_entries_per_day: 256,
+            },
+        )?
+    };
+    let mut inserted_observations = 0;
+    let mut inserted_diagnostics = 0;
+    for path in &paths {
+        let outcome = store.ingest_transcript(
+            path,
+            &IngestOptions {
+                now,
+                ..IngestOptions::default()
+            },
+        )?;
+        inserted_observations += outcome.inserted_observations;
+        inserted_diagnostics += outcome.inserted_diagnostics;
+    }
+    let display = store.load_or_recover_display(now)?;
+    println!(
+        "Refresh scope        {} transcript(s), maximum 8",
+        paths.len()
+    );
+    println!("New observations     {inserted_observations}");
+    println!("New diagnostics      {inserted_diagnostics}");
+    println!(
+        "Projection           {:?} · {}",
+        display.status,
+        store.paths().display.display()
+    );
+    Ok(())
+}
+
 fn print_history(json: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let store = StateStore::open(TrackerConfig::default())?;
+    let store = StateStore::open(TrackerConfig::from_env()?)?;
     let windows = store.recent_windows(20)?;
     let controls = store.recent_control_events(20)?;
     if json {
@@ -280,7 +353,7 @@ fn print_history(json: bool) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn print_analysis(json: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let mut store = StateStore::open(TrackerConfig::default())?;
+    let mut store = StateStore::open(TrackerConfig::from_env()?)?;
     let report = store.analyze_calibration(Utc::now())?;
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);
@@ -291,7 +364,7 @@ fn print_analysis(json: bool) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn print_compatibility_doctor(refresh_releases: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let mut store = StateStore::open(TrackerConfig::default())?;
+    let mut store = StateStore::open(TrackerConfig::from_env()?)?;
     let codex_version = detect_codex_version();
     let (identity, supported) =
         store.current_compatibility_identity(Some(&codex_version), None, None)?;
@@ -331,20 +404,13 @@ fn print_compatibility_doctor(refresh_releases: bool) -> Result<(), Box<dyn std:
 }
 
 fn print_doctor() -> Result<(), Box<dyn std::error::Error>> {
-    let mut store = StateStore::open(TrackerConfig::default())?;
+    let mut store = StateStore::open(TrackerConfig::from_env()?)?;
     let schema = store.schema_version()?;
     let display = store.load_or_recover_display(Utc::now())?;
     let executable = std::env::current_exe()?;
-    let codex_home = std::env::var_os("CODEX_HOME")
-        .map(std::path::PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".codex"))
-        })
-        .unwrap_or_else(|| std::path::PathBuf::from(".codex"));
+    let codex_home = codex_home();
     let hooks_path = codex_home.join("hooks.json");
-    let hooks = std::fs::read_to_string(&hooks_path)
-        .ok()
-        .is_some_and(|contents| contents.contains("codex-5h hook"));
+    validate_installed_hooks(&executable)?;
     let sessions = codex_home.join("sessions");
     let sessions_access = if sessions.exists() {
         std::fs::read_dir(&sessions).is_ok()
@@ -370,8 +436,7 @@ fn print_doctor() -> Result<(), Box<dyn std::error::Error>> {
         }
     );
     println!(
-        "Plugin hooks        {} · {}",
-        if hooks { "installed" } else { "not installed" },
+        "Plugin hooks        installed and valid · {}",
         hooks_path.display()
     );
     println!("Requests continue   yes (all hooks fail open)");
@@ -379,6 +444,15 @@ fn print_doctor() -> Result<(), Box<dyn std::error::Error>> {
         return Err("Codex session directory exists but is not readable".into());
     }
     Ok(())
+}
+
+fn codex_home() -> std::path::PathBuf {
+    std::env::var_os("CODEX_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".codex"))
+        })
+        .unwrap_or_else(|| std::path::PathBuf::from(".codex"))
 }
 
 fn detect_codex_version() -> String {

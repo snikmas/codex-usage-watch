@@ -17,6 +17,8 @@ pub enum DomainError {
     InvalidStaleThreshold,
     #[error("super-usage milestone step must be greater than zero")]
     InvalidSuperUsageStep,
+    #[error("CODEX_USAGE_WATCH_THRESHOLDS must be a comma-separated list of positive integers")]
+    InvalidWarningThresholds,
     #[error("weekly usage must be finite and between 0 and 100")]
     InvalidWeeklyUsage,
     #[error("a WeeklySnapshot must represent a 10080-minute window")]
@@ -34,6 +36,38 @@ pub struct TrackerConfig {
 }
 
 impl TrackerConfig {
+    /// Load the supported version 1 user settings from the environment.
+    ///
+    /// Keeping this surface deliberately small makes hook, CLI, and installer
+    /// behavior identical without introducing a second mutable config file.
+    pub fn from_env() -> Result<Self, DomainError> {
+        let mut config = Self::default();
+        let Some(raw) = std::env::var_os("CODEX_USAGE_WATCH_THRESHOLDS") else {
+            return Ok(config);
+        };
+        let raw = raw
+            .into_string()
+            .map_err(|_| DomainError::InvalidWarningThresholds)?;
+        let thresholds = raw
+            .split(',')
+            .map(str::trim)
+            .map(|value| {
+                value
+                    .parse::<u32>()
+                    .ok()
+                    .filter(|value| *value > 0)
+                    .ok_or(DomainError::InvalidWarningThresholds)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if thresholds.is_empty() {
+            return Err(DomainError::InvalidWarningThresholds);
+        }
+        config.warning_thresholds = thresholds;
+        config.warning_thresholds.sort_unstable();
+        config.warning_thresholds.dedup();
+        Ok(config)
+    }
+
     pub fn new(
         calibration_weekly_points: f64,
         local_window_duration: TimeDelta,

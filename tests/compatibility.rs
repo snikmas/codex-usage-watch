@@ -171,14 +171,12 @@ fn release_metadata_is_allowlisted_and_cached_for_a_day() {
     let temp = TempDir::new().unwrap();
     let source = temp.path().join("release.json");
     let marker = temp.path().join("must-not-run");
-    fs::write(
-        &source,
-        format!(
-            r#"{{"tag_name":"rust-v0.200.0","html_url":"https://github.com/openai/codex/releases/tag/rust-v0.200.0","body":"$(touch {})"}}"#,
-            marker.display()
-        ),
-    )
-    .unwrap();
+    let release = serde_json::json!({
+        "tag_name": "rust-v0.200.0",
+        "html_url": "https://github.com/openai/codex/releases/tag/rust-v0.200.0",
+        "body": format!("$(touch {})", marker.display()),
+    });
+    fs::write(&source, serde_json::to_vec(&release).unwrap()).unwrap();
     unsafe { std::env::set_var("CODEX_USAGE_WATCH_RELEASE_METADATA_FILE", &source) };
     let first = cached_release_metadata(temp.path(), dt("2030-01-01T00:00:00Z"), true)
         .unwrap()

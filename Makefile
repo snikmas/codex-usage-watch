@@ -1,6 +1,6 @@
 PREFIX ?= $(HOME)/.local
 
-.PHONY: build test lint install verify upgrade uninstall smoke package release
+.PHONY: build test lint install verify upgrade uninstall smoke package release release-gate
 
 build:
 	cargo build --release --locked
@@ -31,3 +31,6 @@ package:
 
 release:
 	bash scripts/package-release.sh
+
+release-gate:
+	bash scripts/release-gate.sh

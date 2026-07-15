@@ -1,19 +1,26 @@
 [package]
 name = "codex-usage-watch"
-version = "0.1.0"
+version = "0.1.0-beta.1"
 edition = "2024"
+rust-version = "1.85"
 description = "Local, non-blocking Codex usage awareness"
 license = "MIT"
 readme = "README.md"
+repository = "https://github.com/snikmas/codex-usage"
+homepage = "https://github.com/snikmas/codex-usage"
+documentation = "https://github.com/snikmas/codex-usage#readme"
 include = [
     "/src/**",
     "/tests/**",
     "/hooks/**",
     "/scripts/**",
+    "/docs/**",
     "/.codex-plugin/**",
     "/Cargo.toml",
     "/Cargo.lock",
     "/README.md",
+    "/CONTRIBUTING.md",
+    "/SECURITY.md",
     "/CHANGELOG.md",
     "/LICENSE",
     "/Makefile",

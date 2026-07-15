@@ -7,7 +7,7 @@ many weekly percentage points the same local window consumed.
 It never blocks a prompt, never treats an estimate as an official quota, and
 never stores prompt text, responses, tool arguments, or source code.
 
-Typical native footer:
+Development-preview native footer (not included in the beta artifact):
 
 ```text
 gpt-5.6-sol medium · ~/work/project · 5h est 32% · week +5.1%
@@ -62,7 +62,7 @@ Confidence states are `baseline`, `personal_preliminary`, `personal_candidate`,
 ## Build and test
 
 Requirements: a current stable Rust toolchain, Cargo, Bash, and Python 3 for the
-packaging smoke checks.
+packaging smoke checks. Source builds support Rust 1.85 and newer.
 
 ```bash
 make test
@@ -72,11 +72,25 @@ make build
 
 ## Install and first setup
 
-Install the standalone tracker without reading historical sessions:
+The supported beta distribution is the checksummed Linux x86_64 standalone
+archive plus explicit user hooks. Follow [docs/INSTALL.md](docs/INSTALL.md) for
+the released-artifact path. From a trusted source checkout, install the tracker
+without reading historical sessions with:
 
 ```bash
 PREFIX="$HOME/.local" scripts/install.sh
 ```
+
+Expected result:
+
+```text
+Installed codex-5h tracker-0.1.0-beta.1 at /home/you/.local/bin/codex-5h
+Next: /home/you/.local/bin/codex-5h setup --preview
+```
+
+If that directory is not on your shell `PATH`, use the printed absolute path.
+Installed hooks also use this absolute executable path and do not depend on the
+Codex process inheriting your interactive shell environment.
 
 Preview what an optional import would inspect. This reads filenames and file
 metadata only; it does not open transcript contents or create tracker state:
@@ -116,6 +130,8 @@ on lifecycle events that provide a transcript path.
 ```text
 codex-5h setup [--preview|--skip-import|--import --confirm]
 codex-5h status
+codex-5h status --json
+codex-5h refresh [--transcript PATH]
 codex-5h history [--json]
 codex-5h analyze [--json]
 codex-5h reset --confirm
@@ -141,6 +157,25 @@ execute instructions or modify calibration.
 the next structured observation starts a new window. `doctor` validates the
 installed executable, state/schema, projection, session-directory access, and
 hook configuration. `doctor --compat` performs the separate compatibility check.
+
+`status --json` is the stable `codex-usage-watch.status.v1` machine contract.
+`refresh` checks at most eight transcripts from the last two days, or exactly
+one file supplied with `--transcript`; it never performs an unbounded history
+scan. Run `codex-5h --help` for examples and exit-status documentation.
+
+## Supported settings
+
+Version 1 supports one user-facing attention setting:
+
+```bash
+export CODEX_USAGE_WATCH_THRESHOLDS="60,80,100"
+```
+
+Values are positive integer percentages, separated by commas. They are sorted
+and deduplicated. Invalid values make normal commands fail with exit status 2
+and hooks fail open. The default is `75,90,100`. Window duration, freshness,
+calibration selection, database paths, and super-usage increments are not
+user-tunable policy in version 1; `CODEX_USAGE_WATCH_HOME` only relocates state.
 
 ## Try it safely in an isolated environment
 
@@ -201,6 +236,40 @@ scripts/uninstall.sh --confirm
 Uninstall preserves tracker state. Unrelated hooks are preserved during both
 installation and removal.
 
+## Troubleshooting and recovery
+
+- Missing data: run `codex-5h refresh`, then `codex-5h doctor`. A new install
+  remains unknown until a structured live event or consented import exists.
+- Stale projection: run `codex-5h refresh --transcript PATH`. Stale means no
+  recent supported observation; it is never converted to zero.
+- Command not found: invoke the absolute path printed by `scripts/install.sh`
+  or add `$HOME/.local/bin` (or your chosen `PREFIX/bin`) to `PATH`.
+- Missing, malformed, or moved hooks: rerun the installed binary's
+  `install --confirm`, then `doctor`. Doctor requires all three well-formed
+  handlers to point at that exact executable.
+- Unsupported schema: run `codex-5h doctor --compat`. Tracking remains
+  non-blocking and the estimate becomes unknown instead of guessing.
+- Damaged hook configuration: stop Codex and restore
+  `$CODEX_HOME/hooks.json.codex-5h.bak`, which is written before every changed
+  hook file replacement.
+- Restore a database: stop Codex, uninstall hooks, back up the current database,
+  replace `state.sqlite3` with the chosen integrity-checked backup, reinstall
+  hooks, and run `doctor`.
+- Complete rollback: run `scripts/uninstall.sh --confirm`; after optionally
+  backing up, remove the directory printed as `State directory` by `doctor`.
+  The script intentionally does not delete state automatically.
+
+For the exact local data flow and limits, read [docs/PRIVACY.md](docs/PRIVACY.md).
+Security reports should follow [SECURITY.md](SECURITY.md).
+
+## Platform and support policy
+
+Linux x86_64 is the only supported standalone beta artifact. macOS is a
+build/test preview pending a real user lifecycle run, and Windows is build-only
+with no supported native installer. Plugin marketplace installation is not a
+beta route. See the authoritative [support matrix](docs/SUPPORT.md),
+[contribution guide](CONTRIBUTING.md), and [release policy](docs/RELEASE.md).
+
 ## Optional native Codex fork
 
 Most users need only the executable and lifecycle hooks. The native footer is a
@@ -234,11 +303,16 @@ another repository.
   adapter covers the footer and `/status`.
 - Optional remote release checks require `curl`; all normal tracking works
   offline and does not need network access.
-- Linux is locally lifecycle-tested. macOS Rust checks pass in hosted CI.
-  Windows is not yet an advertised platform because its current test job fails;
-  installation lifecycle acceptance also remains outstanding outside Linux.
+- Linux is locally lifecycle-tested. macOS has hosted Rust and shell-lifecycle
+  gates but still needs a real user acceptance run. Windows has build/test CI
+  only and no supported installation path.
+- A clean-machine external tester using only the public instructions and exact
+  release candidate artifact is still required before the beta may be tagged
+  or recommended publicly.
 
 ## Project status
 
-This repository is an experimental public beta. See [CHANGELOG.md](./CHANGELOG.md)
-for shipped behavior and the limitations above before recommending it to others.
+This repository is an experimental beta candidate. It must not be tagged or
+recommended publicly until the external acceptance gate in
+[docs/RELEASE.md](docs/RELEASE.md) is complete. See
+[CHANGELOG.md](./CHANGELOG.md) for candidate behavior and the limitations above.

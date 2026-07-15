@@ -810,49 +810,50 @@ impl StateStore {
                  updated_at = ?2 WHERE singleton = 1",
             params![generation, checked_at.to_rfc3339()],
         )?;
-        if result == CompatibilityResult::Review
-            && let Some(previous) = prior_profile
-            && let Some(value) = previous.value
-        {
-            let inherited_identity = CalibrationIdentity {
-                plan_type: identity.plan_type.clone(),
-                model_slug: identity.model_slug.clone(),
-                service_tier: identity.service_tier.clone(),
-                schema_fingerprint: identity.schema_fingerprint.clone(),
-                compatibility_generation: generation,
-            };
-            let calibration_id = stable_calibration_id(
-                &format!("inherited-from:{}", previous.calibration_id),
-                &inherited_identity,
-                value,
-            );
-            self.connection.execute(
-                "INSERT OR IGNORE INTO calibration_profiles (
+        if result == CompatibilityResult::Review {
+            if let Some(previous) = prior_profile {
+                if let Some(value) = previous.value {
+                    let inherited_identity = CalibrationIdentity {
+                        plan_type: identity.plan_type.clone(),
+                        model_slug: identity.model_slug.clone(),
+                        service_tier: identity.service_tier.clone(),
+                        schema_fingerprint: identity.schema_fingerprint.clone(),
+                        compatibility_generation: generation,
+                    };
+                    let calibration_id = stable_calibration_id(
+                        &format!("inherited-from:{}", previous.calibration_id),
+                        &inherited_identity,
+                        value,
+                    );
+                    self.connection.execute(
+                        "INSERT OR IGNORE INTO calibration_profiles (
                      calibration_id, identity_key, plan_type, model_slug, service_tier,
                      schema_fingerprint, compatibility_generation, value, confidence,
                      source, evidence_period_start, evidence_period_end, approved_at
                  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
-                params![
-                    calibration_id,
-                    inherited_identity.key(),
-                    inherited_identity.plan_type,
-                    inherited_identity.model_slug,
-                    inherited_identity.service_tier,
-                    inherited_identity.schema_fingerprint,
-                    inherited_identity.compatibility_generation,
-                    value,
-                    CalibrationConfidence::InheritedUnvalidated.as_str(),
-                    format!(
-                        "inherited from {} after compatibility change",
-                        previous.calibration_id
-                    ),
-                    previous
-                        .evidence_period_start
-                        .map(|value| value.to_rfc3339()),
-                    previous.evidence_period_end.map(|value| value.to_rfc3339()),
-                    checked_at.to_rfc3339(),
-                ],
-            )?;
+                        params![
+                            calibration_id,
+                            inherited_identity.key(),
+                            inherited_identity.plan_type,
+                            inherited_identity.model_slug,
+                            inherited_identity.service_tier,
+                            inherited_identity.schema_fingerprint,
+                            inherited_identity.compatibility_generation,
+                            value,
+                            CalibrationConfidence::InheritedUnvalidated.as_str(),
+                            format!(
+                                "inherited from {} after compatibility change",
+                                previous.calibration_id
+                            ),
+                            previous
+                                .evidence_period_start
+                                .map(|value| value.to_rfc3339()),
+                            previous.evidence_period_end.map(|value| value.to_rfc3339()),
+                            checked_at.to_rfc3339(),
+                        ],
+                    )?;
+                }
+            }
         }
         Ok(check)
     }

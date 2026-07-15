@@ -231,7 +231,13 @@ fn install_and_uninstall_are_explicit_reversible_and_preserve_other_hooks() {
     fs::write(
         home.path().join("hooks.json"),
         serde_json::to_vec_pretty(&json!({
-            "hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "other"}]}]}
+            "hooks": {
+                "SessionStart": [{"matcher": "shared", "hooks": [
+                    {"type": "command", "command": "other"},
+                    {"type": "command", "command": "codex-5h hook session-start"}
+                ]}],
+                "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "other-prompt"}]}]
+            }
         }))
         .expect("serialize hooks"),
     )
@@ -244,13 +250,33 @@ fn install_and_uninstall_are_explicit_reversible_and_preserve_other_hooks() {
         .expect("run install without confirmation");
     assert!(!denied.status.success());
 
-    for args in [["install", "--confirm"], ["uninstall", "--confirm"]] {
+    for args in [["install", "--confirm"], ["install", "--confirm"]] {
         assert!(
             Command::new(env!("CARGO_BIN_EXE_codex-5h"))
                 .args(args)
                 .env("CODEX_HOME", home.path())
                 .status()
                 .expect("run hook configuration command")
+                .success()
+        );
+    }
+    let installed: Value = serde_json::from_slice(
+        &fs::read(home.path().join("hooks.json")).expect("read installed hooks"),
+    )
+    .expect("parse installed hooks");
+    let encoded = installed.to_string();
+    assert!(encoded.contains(env!("CARGO_BIN_EXE_codex-5h")));
+    assert_eq!(encoded.matches("session-start").count(), 1);
+    assert_eq!(encoded.matches("user-prompt-submit").count(), 1);
+    assert_eq!(encoded.matches(" hook stop").count(), 1);
+
+    for _ in 0..2 {
+        assert!(
+            Command::new(env!("CARGO_BIN_EXE_codex-5h"))
+                .args(["uninstall", "--confirm"])
+                .env("CODEX_HOME", home.path())
+                .status()
+                .expect("run repeated uninstall")
                 .success()
         );
     }
@@ -262,7 +288,31 @@ fn install_and_uninstall_are_explicit_reversible_and_preserve_other_hooks() {
         hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"],
         "other"
     );
-    assert!(!hooks.to_string().contains("codex-5h hook"));
+    assert_eq!(hooks["hooks"]["SessionStart"][0]["matcher"], "shared");
+    assert!(hooks.to_string().contains("other-prompt"));
+    assert!(!hooks.to_string().contains("codex-5h"));
+    let backup: Value = serde_json::from_slice(
+        &fs::read(home.path().join("hooks.json.codex-5h.bak")).expect("read backup"),
+    )
+    .expect("backup remains recoverable JSON");
+    assert!(backup.to_string().contains("other"));
+}
+
+#[test]
+fn malformed_hooks_and_interrupted_temp_files_never_replace_user_configuration() {
+    let home = tempfile::tempdir().expect("temporary Codex home");
+    let hooks_path = home.path().join("hooks.json");
+    fs::write(&hooks_path, b"{not valid json").expect("write malformed hooks");
+    fs::write(home.path().join(".hooks.json.interrupted"), b"partial").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_codex-5h"))
+        .args(["install", "--confirm"])
+        .env("CODEX_HOME", home.path())
+        .output()
+        .expect("run install against malformed hooks");
+    assert!(!output.status.success());
+    assert_eq!(fs::read(&hooks_path).unwrap(), b"{not valid json");
+    assert!(!home.path().join("hooks.json.codex-5h.bak").exists());
 }
 
 #[test]

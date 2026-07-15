@@ -97,11 +97,12 @@ pub fn cached_release_metadata(
     refresh: bool,
 ) -> Result<Option<ReleaseMetadata>, ReleaseMetadataError> {
     let cache_path = state_directory.join("release-metadata.json");
-    if let Ok(bytes) = fs::read(&cache_path)
-        && let Ok(cached) = serde_json::from_slice::<ReleaseMetadata>(&bytes)
-        && (now - cached.checked_at < TimeDelta::hours(24) || !refresh)
-    {
-        return Ok(Some(cached));
+    if let Ok(bytes) = fs::read(&cache_path) {
+        if let Ok(cached) = serde_json::from_slice::<ReleaseMetadata>(&bytes) {
+            if now - cached.checked_at < TimeDelta::hours(24) || !refresh {
+                return Ok(Some(cached));
+            }
+        }
     }
     if !refresh {
         return Ok(None);
