@@ -1,0 +1,41 @@
+{
+  "description": "Refresh the local usage projection and emit one-time attention notices.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "codex-5h hook session-start",
+            "timeout": 5,
+            "statusMessage": "Updating local usage watch"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "codex-5h hook user-prompt-submit",
+            "timeout": 5,
+            "statusMessage": "Updating local usage watch"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "codex-5h hook stop",
+            "timeout": 5,
+            "statusMessage": "Saving local usage watch"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,37 @@
+[package]
+name = "codex-usage-watch"
+version = "0.1.0"
+edition = "2024"
+description = "Local, non-blocking Codex usage awareness"
+license = "MIT"
+readme = "README.md"
+include = [
+    "/src/**",
+    "/tests/**",
+    "/hooks/**",
+    "/scripts/**",
+    "/.codex-plugin/**",
+    "/Cargo.toml",
+    "/Cargo.lock",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE",
+    "/Makefile",
+]
+
+[lib]
+name = "codex_usage_watch"
+path = "src/lib.rs"
+
+[[bin]]
+name = "codex-5h"
+path = "src/main.rs"
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+directories = "6"
+rusqlite = { version = "0.37", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+thiserror = "2"

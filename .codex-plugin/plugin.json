@@ -1,0 +1,19 @@
+{
+  "name": "codex-usage-watch",
+  "version": "0.1.0",
+  "description": "Local, non-blocking five-hour usage awareness for Codex",
+  "author": {
+    "name": "Codex Usage Watch contributors"
+  },
+  "interface": {
+    "displayName": "Codex Usage Watch",
+    "shortDescription": "Local five-hour usage awareness",
+    "longDescription": "Refreshes a local usage estimate at Codex lifecycle events and provides non-blocking threshold notices.",
+    "developerName": "Codex Usage Watch contributors",
+    "category": "Developer Tools",
+    "capabilities": ["Hooks"],
+    "defaultPrompt": [
+      "Show my local five-hour usage status."
+    ]
+  }
+}

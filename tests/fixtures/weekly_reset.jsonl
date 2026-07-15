@@ -1,0 +1,4 @@
+{"timestamp":"2030-01-01T12:00:00Z","type":"event_msg","payload":{"type":"token_count","rate_limits":{"plan_type":"plus","primary":{"used_percent":98.0,"window_minutes":10080,"resets_at":1893542400},"secondary":null}}}
+{"timestamp":"2030-01-01T12:05:00Z","type":"event_msg","payload":{"type":"token_count","rate_limits":{"plan_type":"plus","primary":{"used_percent":99.0,"window_minutes":10080,"resets_at":1893542400},"secondary":null}}}
+{"timestamp":"2030-01-01T12:10:00Z","type":"event_msg","payload":{"type":"token_count","rate_limits":{"plan_type":"plus","primary":{"used_percent":1.0,"window_minutes":10080,"resets_at":1894147200},"secondary":null}}}
+{"timestamp":"2030-01-01T12:15:00Z","type":"event_msg","payload":{"type":"token_count","rate_limits":{"plan_type":"plus","primary":{"used_percent":3.0,"window_minutes":10080,"resets_at":1894147200},"secondary":null}}}

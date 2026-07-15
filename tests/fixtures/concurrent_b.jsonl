@@ -1,0 +1,2 @@
+{"timestamp":"2030-01-01T12:01:00Z","type":"event_msg","payload":{"type":"token_count","rate_limits":{"plan_type":"plus","primary":{"used_percent":21.0,"window_minutes":10080,"resets_at":1893974400},"secondary":null}}}
+{"timestamp":"2030-01-01T12:03:00Z","type":"event_msg","payload":{"type":"token_count","rate_limits":{"plan_type":"plus","primary":{"used_percent":22.0,"window_minutes":10080,"resets_at":1893974400},"secondary":null}}}
