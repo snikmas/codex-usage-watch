@@ -129,7 +129,27 @@ macOS remains preview-only until it receives a separate real user lifecycle run.
   packaged docs, checksums, provenance, backup/restore/upgrade/rollback/uninstall,
   and Unix permission assertions.
 
-This is local implementation evidence, not release evidence. The final candidate
-SHA/checksum, green public CI, real Codex trust, naturally elapsed dogfood,
-independent clean-machine acceptance, branch protection enforcement, tag, and
+This local section is implementation evidence, not release evidence. Public CI
+and repository-protection evidence follows; final artifact checksum, real Codex
+trust, naturally elapsed dogfood, independent clean-machine acceptance, tag, and
 downloaded published-artifact verification remain intentionally unrecorded.
+
+## Stage 12 public candidate CI and repository protection
+
+- Candidate commit `0b2f1f2a640c7c95601a141132b26d00ca92fa04`
+  passed public PR CI run `29462097044` on 2026-07-16. Green jobs were Linux,
+  macOS, and Windows stable Rust; Rust 1.85 MSRV; dependency policy;
+  documentation/plugin validation; Linux and macOS lifecycle; and the Linux
+  exact-artifact/privacy/permissions release gate.
+- The first public run found platform-specific test issues rather than hiding
+  them: macOS rejects invalid-byte filenames, and Windows warned about a Unix-only
+  mutable builder. The tests/code were corrected, the full required matrix was
+  rerun, and every required job passed on the candidate above.
+- GitHub `main` protection now requires all nine release-relevant contexts,
+  up-to-date branches, resolved conversations, admin enforcement, and blocks
+  force pushes and deletion. Secret scanning and push protection are enabled.
+  PR #4 was correctly blocked while checks were failing or pending.
+
+This public CI evidence still does not satisfy real hook trust, naturally elapsed
+dogfood, independent clean-machine acceptance, or published-artifact verification.
+The beta remains untagged and must not be publicly recommended yet.
