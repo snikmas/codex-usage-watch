@@ -119,10 +119,11 @@ macOS remains preview-only until it receives a separate real user lifecycle run.
   paths and sensitive field names from both outputs.
 - Transcript ingestion retains bounded discovery and now caps each JSONL record
   at 1 MiB. Oversized input emits only a fixed diagnostic, later valid records
-  remain readable, unusual Unix path bytes are accepted, and replacement/truncate
-  behavior remains deterministic. A separate cargo-fuzz target covers arbitrary
+  remain readable, spaces/quotes work across Unix, non-UTF-8 bytes work on Unix
+  filesystems that permit them, and replacement/truncate behavior remains
+  deterministic. A separate cargo-fuzz target covers arbitrary
   transcript bytes without adding real transcripts as seeds.
-- The dirty-tree implementation gate passed formatting, strict clippy, 68
+- The dirty-tree implementation gate passed formatting, strict clippy, 69 Linux
   automated tests (one manual live test ignored), source/package lifecycle,
   exact-artifact behavior, extracted privacy/manifest/contamination checks,
   packaged docs, checksums, provenance, backup/restore/upgrade/rollback/uninstall,

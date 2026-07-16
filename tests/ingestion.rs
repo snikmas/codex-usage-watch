@@ -351,12 +351,23 @@ fn oversized_records_are_bounded_and_do_not_hide_later_valid_records() {
 
 #[cfg(unix)]
 #[test]
-fn transcript_paths_with_spaces_quotes_and_non_utf8_bytes_are_supported() {
+fn transcript_paths_with_spaces_and_quotes_are_supported() {
+    let temp = TempDir::new().unwrap();
+    let path = temp.path().join("session space 'quote'.jsonl");
+    fs::copy(fixture("normal_growth.jsonl"), &path).unwrap();
+    let batch = ingest_transcript(&path, TranscriptCursor::default(), &fixture_options()).unwrap();
+    assert_eq!(batch.snapshots.len(), 2);
+    assert_eq!(batch.source_file, fs::canonicalize(path).unwrap());
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+#[test]
+fn transcript_paths_with_non_utf8_bytes_are_supported_where_the_filesystem_allows_them() {
     use std::ffi::OsString;
     use std::os::unix::ffi::OsStringExt;
 
     let temp = TempDir::new().unwrap();
-    let mut name = b"session space 'quote' ".to_vec();
+    let mut name = b"session-non-utf8-".to_vec();
     name.push(0xff);
     name.extend_from_slice(b".jsonl");
     let path = temp.path().join(OsString::from_vec(name));
