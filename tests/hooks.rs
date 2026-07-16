@@ -361,6 +361,20 @@ fn assert_paths_equivalent(actual: &Path, expected: &Path) {
     }
 }
 
+#[cfg(unix)]
+fn publish_test_binary(destination: &Path) {
+    let staged = destination.with_file_name(".codex-5h.tmp");
+    fs::copy(env!("CARGO_BIN_EXE_codex-5h"), &staged).expect("stage tracker binary");
+    fs::File::open(&staged)
+        .expect("open staged tracker binary")
+        .sync_all()
+        .expect("sync staged tracker binary");
+    fs::rename(&staged, destination).expect("publish tracker binary atomically");
+    // The sandbox uses a bind-mounted filesystem where an immediately executed
+    // copy can briefly retain ETXTBSY after its writer closes.
+    std::thread::sleep(Duration::from_millis(20));
+}
+
 #[test]
 fn malformed_hooks_and_interrupted_temp_files_never_replace_user_configuration() {
     let home = tempfile::tempdir().expect("temporary Codex home");
@@ -386,9 +400,7 @@ fn generated_hook_commands_execute_adversarial_paths_literally() {
     let bin_dir = temp.path().join(component);
     fs::create_dir_all(&bin_dir).expect("create adversarial binary directory");
     let copied_binary = bin_dir.join("codex-5h");
-    let staged_binary = bin_dir.join(".codex-5h.tmp");
-    fs::copy(env!("CARGO_BIN_EXE_codex-5h"), &staged_binary).expect("stage tracker binary");
-    fs::rename(&staged_binary, &copied_binary).expect("publish tracker binary atomically");
+    publish_test_binary(&copied_binary);
 
     let codex_home = temp.path().join("codex home");
     let state = temp.path().join("state");
@@ -466,7 +478,7 @@ fn hook_install_rejects_a_non_utf8_executable_path_without_writing_hooks() {
     let bin_dir = temp.path().join(component);
     fs::create_dir_all(&bin_dir).expect("create non-UTF-8 binary directory");
     let copied_binary = bin_dir.join("codex-5h");
-    fs::copy(env!("CARGO_BIN_EXE_codex-5h"), &copied_binary).expect("copy tracker binary");
+    publish_test_binary(&copied_binary);
     let codex_home = temp.path().join("codex-home");
 
     let output = Command::new(&copied_binary)
