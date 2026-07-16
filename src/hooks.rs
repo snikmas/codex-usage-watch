@@ -35,6 +35,11 @@ pub enum HookAdapterError {
     InvalidHooksFile,
     #[error("installed hook configuration is invalid: {0}")]
     InvalidHookConfiguration(String),
+    #[error(
+        "installed executable path cannot be represented safely in a hook command: {}",
+        .0.display()
+    )]
+    UnsafeExecutablePath(PathBuf),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -114,7 +119,7 @@ pub fn run_hook(
 
     let outcome = refresh(input.transcript_path.as_deref(), now)?;
     let compatibility = if event == HookEvent::SessionStart {
-        let mut store = StateStore::open(TrackerConfig::from_env()?)?;
+        let mut store = StateStore::open_for_hook(TrackerConfig::from_env()?)?;
         // Keep the owned environment fallback alive for the identity call.
         let environment_version = std::env::var("CODEX_VERSION").ok();
         let version = input
@@ -173,7 +178,7 @@ fn refresh(
     now: DateTime<Utc>,
 ) -> Result<crate::PersistOutcome, HookAdapterError> {
     let config = TrackerConfig::from_env()?;
-    let mut store = StateStore::open(config)?;
+    let mut store = StateStore::open_for_hook(config)?;
     let paths = transcript_path.map(|path| vec![path.to_path_buf()]);
     let options = IngestOptions {
         now,
@@ -262,7 +267,7 @@ pub fn install_hooks(confirm: bool) -> Result<PathBuf, HookAdapterError> {
             .or_insert_with(|| Value::Array(Vec::new()))
             .as_array_mut()
             .ok_or(HookAdapterError::InvalidHooksFile)?;
-        let command = hook_command(&executable, event);
+        let command = hook_command(&executable, event)?;
         remove_owned_handlers(groups, event);
         groups.push(json!({
             "hooks": [{
@@ -367,18 +372,57 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), HookAdapterError> {
     Ok(())
 }
 
-fn hook_command(executable: &Path, event: HookEvent) -> String {
-    let executable = executable.to_string_lossy().replace('"', "\\\"");
-    format!("\"{executable}\" hook {}", event.command_name())
+fn hook_command(executable: &Path, event: HookEvent) -> Result<String, HookAdapterError> {
+    let executable = executable
+        .to_str()
+        .ok_or_else(|| HookAdapterError::UnsafeExecutablePath(executable.to_path_buf()))?;
+    #[cfg(unix)]
+    let executable = format!("'{}'", executable.replace('\'', "'\"'\"'"));
+    #[cfg(not(unix))]
+    let executable = format!("\"{}\"", executable.replace('"', "\\\""));
+    Ok(format!("{executable} hook {}", event.command_name()))
 }
 
 fn hook_command_matches(command: &str, expected_executable: &Path, event: HookEvent) -> bool {
+    hook_command_executable(command, event)
+        .is_some_and(|executable| paths_equivalent(&executable, expected_executable))
+}
+
+fn hook_command_executable(command: &str, event: HookEvent) -> Option<PathBuf> {
     let suffix = format!(" hook {}", event.command_name());
-    let Some(executable) = command.strip_suffix(&suffix) else {
-        return false;
-    };
-    let executable = Path::new(executable.trim().trim_matches('"'));
-    paths_equivalent(executable, expected_executable)
+    let encoded = command.strip_suffix(&suffix)?.trim();
+    #[cfg(unix)]
+    if encoded.starts_with('\'') && encoded.ends_with('\'') {
+        return decode_posix_single_quoted(encoded).map(PathBuf::from);
+    }
+    let executable = encoded
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .unwrap_or(encoded)
+        .replace("\\\"", "\"");
+    Some(PathBuf::from(executable))
+}
+
+#[cfg(unix)]
+fn decode_posix_single_quoted(encoded: &str) -> Option<String> {
+    let body = encoded.strip_prefix('\'')?.strip_suffix('\'')?;
+    let mut decoded = String::with_capacity(body.len());
+    let mut remaining = body;
+    const ESCAPED_SINGLE_QUOTE: &str = "'\"'\"'";
+    while !remaining.is_empty() {
+        if let Some(rest) = remaining.strip_prefix(ESCAPED_SINGLE_QUOTE) {
+            decoded.push('\'');
+            remaining = rest;
+            continue;
+        }
+        let character = remaining.chars().next()?;
+        if character == '\'' {
+            return None;
+        }
+        decoded.push(character);
+        remaining = &remaining[character.len_utf8()..];
+    }
+    Some(decoded)
 }
 
 fn paths_equivalent(actual: &Path, expected: &Path) -> bool {
@@ -401,12 +445,10 @@ fn is_owned_handler(handler: &Value, event: HookEvent) -> bool {
     if command == legacy {
         return true;
     }
-    let suffix = format!(" hook {}", event.command_name());
-    let Some(executable) = command.strip_suffix(&suffix) else {
+    let Some(executable) = hook_command_executable(command, event) else {
         return false;
     };
-    let executable = executable.trim().trim_matches('"');
-    Path::new(executable)
+    executable
         .file_name()
         .and_then(|value| value.to_str())
         .is_some_and(|value| value == "codex-5h" || value == "codex-5h.exe")

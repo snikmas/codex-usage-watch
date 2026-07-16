@@ -1,31 +1,43 @@
-# Support matrix
+# Experimental beta support
 
-This matrix is the single source of truth for version `0.1.0-beta.1`.
+This is the single source of truth for `0.1.0-beta.1`.
 
-| Surface | Status | Evidence |
+| Surface | Status | Evidence or limit |
 |---|---|---|
-| Linux x86_64 standalone archive | Beta candidate, not released | Local exact-artifact lifecycle passed; public Ubuntu CI and external acceptance remain release gates |
-| macOS Rust library and CLI | CI-configured preview | Rust and shell-lifecycle jobs are configured; no advertised artifact until public CI and a real user lifecycle pass |
-| Windows Rust library and CLI | CI-configured build-only | Rust CI is configured; native installation is unsupported in this beta |
-| Official Codex plus user hooks | Beta candidate, not released | Absolute-path hook install, doctor, backup, upgrade, and uninstall passed locally |
-| Codex plugin marketplace install | Unsupported | No public marketplace submission or trust-onboarding claim |
-| Native Codex footer and `/status` adapter | Development preview | Not present in standalone artifacts; see `NATIVE_ADAPTER.md` |
+| Ubuntu 25.10 x86_64 standalone archive | Experimental beta candidate | Exact checksummed-archive lifecycle tested locally with Codex CLI 0.144.4; published artifact recheck remains a release gate |
+| Other Linux distributions or architectures | Unverified | They may work, but no compatibility claim is made from the Rust target name alone |
+| macOS library and CLI | Preview | Hosted build and shell-lifecycle coverage only; no verified user artifact |
+| Windows library and CLI | Build/test only | Native installation is unsupported |
+| Official Codex plus user hooks | Experimental beta candidate | Three-event real trust/lifecycle evidence is required in `ACCEPTANCE.md` |
+| Codex plugin marketplace | Unsupported | No marketplace or validator ownership promise |
+| Native footer and `/status` adapter | Development preview | Not included in the standalone archive |
 
-The minimum supported Rust version for source builds is 1.85. CI tests that
-MSRV separately from the current stable toolchain. Platform status may only be
-promoted after its named acceptance evidence exists; a green cross-platform
-compile alone does not establish installation support.
+Source builds have an MSRV of Rust 1.85. Passing a compile job does not establish
+installation compatibility.
 
-## Privacy-sanitized diagnostics
+## Get help safely
 
-Run `codex-5h doctor --json` for the versioned diagnostic contract. To create a
-private `0600` file that can be reviewed before sharing, run:
+- Use the [bug form](https://github.com/snikmas/codex-usage-watch/issues/new?template=bug.yml)
+  for reproducible behavior.
+- Use the [compatibility form](https://github.com/snikmas/codex-usage-watch/issues/new?template=compatibility.yml)
+  for Codex, schema, model, or platform changes.
+- Use [private vulnerability reporting](https://github.com/snikmas/codex-usage-watch/security/advisories/new)
+  for security issues. Do not open a public security issue.
+
+Create privacy-sanitized diagnostics with:
 
 ```bash
+codex-5h doctor --json
 codex-5h doctor --support-bundle ./codex-usage-watch-support.json --confirm
 ```
 
-The bundle contains only tracker version, OS/architecture, schema and projection
-state, hook-path validity, compatibility state, and stable issue codes. It never
-contains transcript/state paths, raw records, prompts, responses, source code,
-or the SQLite database.
+Review the output before sharing. Never attach transcripts, prompts, responses,
+source code, local paths, `display.json`, `state.sqlite3`, or database sidecars.
+
+## Beta limitations
+
+The database has no retention/compaction policy; long-running multi-window
+dogfood and independent clean-machine feedback are still in progress; release
+publication recovery is manual; plugin validation is not a supported user path;
+and dependency security updates are reviewed manually. Re-evaluate these before
+a stable release or any broader platform claim.

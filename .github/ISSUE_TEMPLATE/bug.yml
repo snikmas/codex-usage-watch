@@ -5,7 +5,7 @@ labels: [bug]
 body:
   - type: markdown
     attributes:
-      value: Never attach transcripts, prompts, responses, source code, display.json, or state.sqlite3.
+      value: Never attach transcripts, prompts, responses, source code, display.json, or state.sqlite3. Report vulnerabilities privately at https://github.com/snikmas/codex-usage-watch/security/advisories/new.
   - type: input
     id: version
     attributes:

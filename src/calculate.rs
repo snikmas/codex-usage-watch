@@ -6,6 +6,39 @@ use crate::model::{
     LocalWindow, MeterReading, ObservationId, TrackerConfig, WeeklySnapshot, WindowStatus,
 };
 
+const RESET_TIMESTAMP_JITTER: chrono::TimeDelta = chrono::TimeDelta::seconds(60);
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum WeeklyTransition {
+    Advance(f64),
+    Reset(f64),
+    IgnoreRegression,
+}
+
+pub(crate) fn weekly_transition(
+    previous_used: f64,
+    previous_reset: Option<DateTime<Utc>>,
+    next_used: f64,
+    next_reset: Option<DateTime<Utc>>,
+) -> WeeklyTransition {
+    if let (Some(previous), Some(next)) = (previous_reset, next_reset) {
+        let reset_shift = next.signed_duration_since(previous);
+        if reset_shift > RESET_TIMESTAMP_JITTER {
+            return WeeklyTransition::Reset(next_used);
+        }
+        if reset_shift < -RESET_TIMESTAMP_JITTER || next_used < previous_used {
+            return WeeklyTransition::IgnoreRegression;
+        }
+        return WeeklyTransition::Advance(next_used - previous_used);
+    }
+
+    if next_used < previous_used {
+        WeeklyTransition::Reset(next_used)
+    } else {
+        WeeklyTransition::Advance(next_used - previous_used)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ApplyOutcome {
     pub accepted: bool,
@@ -85,15 +118,20 @@ impl AccountingEngine {
             };
         }
 
-        let reset_timestamp_changed = matches!(
-            (window.latest_snapshot.resets_at, snapshot.resets_at),
-            (Some(previous), Some(current)) if previous != current
-        );
-        let usage_decreased = snapshot.used_percent < window.latest_snapshot.used_percent;
-        let delta = if reset_timestamp_changed || usage_decreased {
-            snapshot.used_percent
-        } else {
-            snapshot.used_percent - window.latest_snapshot.used_percent
+        let delta = match weekly_transition(
+            window.latest_snapshot.used_percent,
+            window.latest_snapshot.resets_at,
+            snapshot.used_percent,
+            snapshot.resets_at,
+        ) {
+            WeeklyTransition::Advance(delta) | WeeklyTransition::Reset(delta) => delta,
+            WeeklyTransition::IgnoreRegression => {
+                return ApplyOutcome {
+                    accepted: false,
+                    reading: reading_for(window, &self.config, now, None),
+                    archived_reading: None,
+                };
+            }
         };
 
         window.accumulated_weekly_points = (window.accumulated_weekly_points + delta).max(0.0);

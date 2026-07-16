@@ -3,7 +3,7 @@ use std::fmt;
 use std::io::{self, Read};
 use std::process::ExitCode;
 
-use chrono::Utc;
+use chrono::{DateTime, FixedOffset, Local, Utc};
 use codex_usage_watch::hooks::{
     HookAdapterError, HookEvent, install_hooks, run_hook, uninstall_hooks, validate_installed_hooks,
 };
@@ -71,7 +71,14 @@ fn classify_error(error: &(dyn Error + 'static)) -> (u8, &'static str) {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let args = std::env::args().skip(1).collect::<Vec<_>>();
+    let args = std::env::args_os()
+        .skip(1)
+        .map(|argument| {
+            argument
+                .into_string()
+                .map_err(|_| usage_error("command arguments must be valid UTF-8"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     match args.as_slice() {
         [] => print_help(),
         [flag] if flag == "--help" || flag == "-h" || flag == "help" => print_help(),
@@ -292,7 +299,7 @@ fn run_setup(mode: SetupMode) -> Result<(), Box<dyn std::error::Error>> {
         preview
             .earliest_modified_at
             .zip(preview.latest_modified_at)
-            .map(|(start, end)| format!("{} to {}", start.to_rfc3339(), end.to_rfc3339()))
+            .map(|(start, end)| format_local_range(start, end))
             .unwrap_or_else(|| "none".to_string())
     );
     println!(
@@ -395,7 +402,7 @@ fn print_status(json: bool) -> Result<(), Box<dyn std::error::Error>> {
         display
             .window_started_at
             .zip(display.window_ends_at)
-            .map(|(start, end)| format!("{} to {}", start.to_rfc3339(), end.to_rfc3339()))
+            .map(|(start, end)| format_local_range(start, end))
             .unwrap_or_else(|| "unavailable".to_string())
     );
     println!(
@@ -468,14 +475,14 @@ fn print_history(json: bool) -> Result<(), Box<dyn std::error::Error>> {
         );
         return Ok(());
     }
-    println!("Recent local windows (newest first)");
+    println!("Recent local windows (newest first; local time)");
     if windows.is_empty() {
         println!("  none");
     }
     for window in windows {
         println!(
             "  {} · {} · 5h {:.0}% · week +{:.1} · {:?} · {}",
-            window.started_at.to_rfc3339(),
+            format_local_timestamp(window.started_at),
             window.lifecycle,
             window.five_hour_estimate_percent,
             window.weekly_points,
@@ -484,11 +491,11 @@ fn print_history(json: bool) -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     if !controls.is_empty() {
-        println!("Control audit");
+        println!("Control audit (local time)");
         for event in controls {
             println!(
                 "  {} · {} · {}",
-                event.occurred_at.to_rfc3339(),
+                format_local_timestamp(event.occurred_at),
                 event.event_type,
                 event.detail
             );
@@ -862,7 +869,7 @@ fn print_human_analysis(report: &CalibrationReport) {
         report
             .data_period_start
             .zip(report.data_period_end)
-            .map(|(start, end)| format!("{} to {}", start.to_rfc3339(), end.to_rfc3339()))
+            .map(|(start, end)| format_local_range(start, end))
             .unwrap_or_else(|| "none".to_string())
     );
     println!(
@@ -896,4 +903,121 @@ fn optional_points(value: Option<f64>) -> String {
     value
         .map(|value| format!("+{value:.1} points this window"))
         .unwrap_or_else(|| "unavailable".to_string())
+}
+
+fn format_local_timestamp(timestamp: DateTime<Utc>) -> String {
+    format_display_timestamp(timestamp.with_timezone(&Local).fixed_offset())
+}
+
+fn format_local_range(start: DateTime<Utc>, end: DateTime<Utc>) -> String {
+    format_display_range(
+        start.with_timezone(&Local).fixed_offset(),
+        end.with_timezone(&Local).fixed_offset(),
+    )
+}
+
+fn format_display_timestamp(timestamp: DateTime<FixedOffset>) -> String {
+    timestamp.format("%b %d, %Y %H:%M").to_string()
+}
+
+fn format_display_range(start: DateTime<FixedOffset>, end: DateTime<FixedOffset>) -> String {
+    let zone = local_zone_label(
+        start.offset().local_minus_utc(),
+        end.offset().local_minus_utc(),
+    );
+
+    if start.date_naive() == end.date_naive() {
+        format!(
+            "{}–{} ({zone})",
+            start.format("%b %d, %Y %H:%M"),
+            end.format("%H:%M")
+        )
+    } else {
+        format!(
+            "{} – {} ({zone})",
+            start.format("%b %d, %Y %H:%M"),
+            end.format("%b %d, %Y %H:%M")
+        )
+    }
+}
+
+fn local_zone_label(start_offset_seconds: i32, end_offset_seconds: i32) -> String {
+    let start = utc_offset_label(start_offset_seconds);
+    if start_offset_seconds == end_offset_seconds {
+        format!("local, {start}")
+    } else {
+        format!("local, {start} to {}", utc_offset_label(end_offset_seconds))
+    }
+}
+
+fn utc_offset_label(offset_seconds: i32) -> String {
+    let sign = if offset_seconds < 0 { '-' } else { '+' };
+    let total_minutes = offset_seconds.unsigned_abs() / 60;
+    format!(
+        "UTC{sign}{:02}:{:02}",
+        total_minutes / 60,
+        total_minutes % 60
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{DateTime, FixedOffset};
+
+    use super::{
+        format_display_range, format_display_timestamp, local_zone_label, utc_offset_label,
+    };
+
+    fn fixed(value: &str) -> DateTime<FixedOffset> {
+        DateTime::parse_from_rfc3339(value).unwrap()
+    }
+
+    #[test]
+    fn display_timestamps_drop_machine_oriented_precision() {
+        assert_eq!(
+            format_display_timestamp(fixed("2026-07-16T07:21:37.253+08:00")),
+            "Jul 16, 2026 07:21"
+        );
+    }
+
+    #[test]
+    fn display_ranges_collapse_a_shared_local_date() {
+        assert_eq!(
+            format_display_range(
+                fixed("2026-07-16T07:21:37.253+08:00"),
+                fixed("2026-07-16T12:21:37.253+08:00"),
+            ),
+            "Jul 16, 2026 07:21–12:21 (local, UTC+08:00)"
+        );
+    }
+
+    #[test]
+    fn display_ranges_repeat_dates_when_the_local_day_changes() {
+        assert_eq!(
+            format_display_range(
+                fixed("2026-07-16T23:00:00+08:00"),
+                fixed("2026-07-17T04:00:00+08:00"),
+            ),
+            "Jul 16, 2026 23:00 – Jul 17, 2026 04:00 (local, UTC+08:00)"
+        );
+    }
+
+    #[test]
+    fn utc_offset_labels_are_compact_and_unambiguous() {
+        assert_eq!(utc_offset_label(8 * 60 * 60), "UTC+08:00");
+        assert_eq!(utc_offset_label(-(5 * 60 * 60 + 30 * 60)), "UTC-05:30");
+        assert_eq!(utc_offset_label(0), "UTC+00:00");
+    }
+
+    #[test]
+    fn local_zone_label_handles_offset_changes() {
+        assert_eq!(
+            local_zone_label(8 * 60 * 60, 8 * 60 * 60),
+            "local, UTC+08:00"
+        );
+        assert_eq!(
+            local_zone_label(-(4 * 60 * 60), -(5 * 60 * 60)),
+            "local, UTC-04:00 to UTC-05:00"
+        );
+    }
 }

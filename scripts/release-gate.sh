@@ -16,6 +16,7 @@ cargo test --locked --all-targets
 bash scripts/check-docs.sh
 bash scripts/check-plugin.sh
 bash scripts/smoke-install.sh
+bash scripts/test-uninstall.sh
 bash scripts/package-release.sh
 
 (cd target/release-dist && sha256sum -c SHA256SUMS)

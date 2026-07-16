@@ -3,6 +3,9 @@ description: Report a Codex version, model, schema, or platform change
 title: "[Compatibility]: "
 labels: [compatibility]
 body:
+  - type: markdown
+    attributes:
+      value: This public form is for compatibility feedback, not vulnerabilities. Never attach private Codex data.
   - type: input
     id: versions
     attributes:

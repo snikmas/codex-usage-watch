@@ -40,15 +40,73 @@ fn fixture_snapshots(name: &str) -> Vec<WeeklySnapshot> {
 }
 
 fn snapshot(source: &str, offset: u64, at: &str, used: f64) -> WeeklySnapshot {
+    snapshot_with_reset(source, offset, at, used, "2030-01-08T00:00:00Z")
+}
+
+fn snapshot_with_reset(
+    source: &str,
+    offset: u64,
+    at: &str,
+    used: f64,
+    reset: &str,
+) -> WeeklySnapshot {
     WeeklySnapshot::new(
         ObservationId::new(source, offset),
         dt(at),
         used,
-        Some(dt("2030-01-08T00:00:00Z")),
+        Some(dt(reset)),
         10_080,
         Some("plus".to_owned()),
     )
     .unwrap()
+}
+
+#[test]
+fn sqlite_replay_ignores_one_second_reset_jitter_and_older_epochs() {
+    let temp = TempDir::new().unwrap();
+    let mut store = StateStore::open_in(temp.path(), TrackerConfig::default()).unwrap();
+    let outcome = store
+        .ingest(
+            [
+                snapshot_with_reset("a", 0, "2030-01-01T12:00:00Z", 10.0, "2030-01-08T00:00:00Z"),
+                snapshot_with_reset("b", 0, "2030-01-01T12:01:00Z", 17.0, "2030-01-08T00:00:01Z"),
+                snapshot_with_reset("a", 1, "2030-01-01T12:02:00Z", 17.0, "2030-01-08T00:00:00Z"),
+                snapshot_with_reset(
+                    "new",
+                    0,
+                    "2030-01-01T12:03:00Z",
+                    2.0,
+                    "2030-01-15T00:00:00Z",
+                ),
+                snapshot_with_reset(
+                    "old",
+                    0,
+                    "2030-01-01T12:04:00Z",
+                    18.0,
+                    "2030-01-08T00:00:00Z",
+                ),
+                snapshot_with_reset(
+                    "new",
+                    1,
+                    "2030-01-01T12:05:00Z",
+                    3.0,
+                    "2030-01-15T00:00:00Z",
+                ),
+            ],
+            dt("2030-01-01T12:05:00Z"),
+        )
+        .unwrap();
+
+    assert_eq!(outcome.display.weekly_points, Some(10.0));
+    let connection = Connection::open(&store.paths().database).unwrap();
+    let ignored: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM snapshots WHERE affects_meter = 0",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(ignored, 1);
 }
 
 #[test]

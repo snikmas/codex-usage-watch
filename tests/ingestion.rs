@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, TimeDelta, Utc};
 use codex_usage_watch::{
@@ -415,4 +416,80 @@ fn large_history_discovery_stays_inside_configured_bounds() {
     )
     .unwrap();
     assert_eq!(found.len(), 8);
+}
+
+#[test]
+fn discovery_sorts_every_candidate_before_applying_the_daily_bound() {
+    let temp = TempDir::new().unwrap();
+    let day = temp.path().join("2030/01/03");
+    fs::create_dir_all(&day).unwrap();
+    let old_time = SystemTime::UNIX_EPOCH + Duration::from_secs(1_893_456_000);
+    for index in 0..300 {
+        let path = day.join(format!("older-{index:03}.jsonl"));
+        fs::write(&path, b"{}\n").unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(old_time)
+            .unwrap();
+    }
+    let newest = day.join("newest-usable.jsonl");
+    fs::copy(fixture("normal_growth.jsonl"), &newest).unwrap();
+    fs::File::options()
+        .write(true)
+        .open(&newest)
+        .unwrap()
+        .set_modified(old_time + Duration::from_secs(60))
+        .unwrap();
+
+    let options = DiscoveryOptions {
+        lookback_days: 1,
+        max_files: 8,
+        max_entries_per_day: 256,
+    };
+    let first =
+        discover_recent_transcripts(temp.path(), dt("2030-01-03T12:00:00Z"), options).unwrap();
+    let second =
+        discover_recent_transcripts(temp.path(), dt("2030-01-03T12:00:00Z"), options).unwrap();
+
+    assert_eq!(first, second);
+    assert_eq!(first.first(), Some(&newest));
+    let batch =
+        ingest_transcript(&first[0], TranscriptCursor::default(), &fixture_options()).unwrap();
+    assert_eq!(batch.snapshots.len(), 2);
+}
+
+#[test]
+fn discovery_uses_path_order_to_break_equal_timestamp_ties() {
+    let temp = TempDir::new().unwrap();
+    let day = temp.path().join("2030/01/03");
+    fs::create_dir_all(&day).unwrap();
+    let modified = SystemTime::UNIX_EPOCH + Duration::from_secs(1_893_456_000);
+    for name in ["c.jsonl", "a.jsonl", "b.jsonl"] {
+        let path = day.join(name);
+        fs::write(&path, b"{}\n").unwrap();
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+    }
+
+    let found = discover_recent_transcripts(
+        temp.path(),
+        dt("2030-01-03T12:00:00Z"),
+        DiscoveryOptions {
+            lookback_days: 1,
+            max_files: 3,
+            max_entries_per_day: 3,
+        },
+    )
+    .unwrap();
+    let names: Vec<_> = found
+        .iter()
+        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, ["a.jsonl", "b.jsonl", "c.jsonl"]);
 }

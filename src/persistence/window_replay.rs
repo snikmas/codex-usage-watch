@@ -5,6 +5,7 @@ use rusqlite::{OptionalExtension, Transaction, params};
 
 use super::calibration_state::select_calibration_profile;
 use super::{StateError, parse_timestamp};
+use crate::calculate::{WeeklyTransition, weekly_transition};
 use crate::calibration::{CalibrationConfidence, CalibrationIdentity, CalibrationProfile};
 use crate::model::{TrackerConfig, WeeklySnapshot};
 
@@ -127,6 +128,7 @@ pub(super) fn rebuild_windows(
 
     let mut windows = Vec::<ReplayWindow>::new();
     let mut current: Option<ReplayWindow> = None;
+    transaction.execute("UPDATE snapshots SET affects_meter = 0", [])?;
     for (id, source_file, byte_offset, observed_at, used_percent, resets_at, plan_type) in
         observations
     {
@@ -166,15 +168,16 @@ pub(super) fn rebuild_windows(
                 weekly_points: 0.0,
                 last_milestone: None,
             });
+            transaction.execute("UPDATE snapshots SET affects_meter = 1 WHERE id = ?1", [id])?;
         } else if let Some(window) = current.as_mut() {
-            let reset_changed = matches!(
-                (window.latest_resets_at, resets_at),
-                (Some(previous), Some(next)) if previous != next
-            );
-            let delta = if reset_changed || used_percent < window.latest_used_percent {
-                used_percent
-            } else {
-                used_percent - window.latest_used_percent
+            let delta = match weekly_transition(
+                window.latest_used_percent,
+                window.latest_resets_at,
+                used_percent,
+                resets_at,
+            ) {
+                WeeklyTransition::Advance(delta) | WeeklyTransition::Reset(delta) => delta,
+                WeeklyTransition::IgnoreRegression => continue,
             };
             window.weekly_points = (window.weekly_points + delta).max(0.0);
             window.latest_observed_at = observed_at;
@@ -182,8 +185,8 @@ pub(super) fn rebuild_windows(
             window.latest_resets_at = resets_at;
             window.last_milestone =
                 newest_milestone(window.weekly_points / window.calibration * 100.0, config);
+            transaction.execute("UPDATE snapshots SET affects_meter = 1 WHERE id = ?1", [id])?;
         }
-        transaction.execute("UPDATE snapshots SET affects_meter = 1 WHERE id = ?1", [id])?;
     }
     if let Some(window) = current {
         windows.push(window);

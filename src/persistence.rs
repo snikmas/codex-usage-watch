@@ -29,6 +29,7 @@ use window_replay::{insert_snapshots, rebuild_windows};
 
 const SCHEMA_VERSION: i64 = 10;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(2);
+const HOOK_BUSY_TIMEOUT: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Error)]
 pub enum StateError {
@@ -175,17 +176,29 @@ pub struct StateStore {
 impl StateStore {
     pub fn open(config: TrackerConfig) -> Result<Self, StateError> {
         let paths = StatePaths::resolve(&config)?;
-        Self::open_at(paths, config)
+        Self::open_at(paths, config, BUSY_TIMEOUT)
+    }
+
+    /// Open state with a deliberately short lock budget for a Codex lifecycle
+    /// hook. Hooks are advisory and must fail open before Codex's own timeout;
+    /// interactive CLI commands retain the longer normal retry budget.
+    pub fn open_for_hook(config: TrackerConfig) -> Result<Self, StateError> {
+        let paths = StatePaths::resolve(&config)?;
+        Self::open_at(paths, config, HOOK_BUSY_TIMEOUT)
     }
 
     pub fn open_in(
         directory: impl Into<PathBuf>,
         config: TrackerConfig,
     ) -> Result<Self, StateError> {
-        Self::open_at(StatePaths::in_directory(directory), config)
+        Self::open_at(StatePaths::in_directory(directory), config, BUSY_TIMEOUT)
     }
 
-    fn open_at(paths: StatePaths, config: TrackerConfig) -> Result<Self, StateError> {
+    fn open_at(
+        paths: StatePaths,
+        config: TrackerConfig,
+        busy_timeout: Duration,
+    ) -> Result<Self, StateError> {
         ensure_private_directory(&paths.directory).map_err(|source| StateError::Io {
             path: paths.directory.clone(),
             source,
@@ -196,15 +209,17 @@ impl StateStore {
             path: paths.database.clone(),
             source,
         })?;
-        connection.busy_timeout(BUSY_TIMEOUT)?;
-        retry_busy(|| {
+        connection.busy_timeout(busy_timeout)?;
+        retry_busy(busy_timeout, || {
             connection
                 .pragma_update(None, "journal_mode", "WAL")
                 .map_err(StateError::from)
         })?;
         connection.pragma_update(None, "foreign_keys", "ON")?;
-        retry_busy(|| migrations::migrate(&mut connection))?;
-        retry_busy(|| migrations::write_config_metadata(&connection, &config))?;
+        retry_busy(busy_timeout, || migrations::migrate(&mut connection))?;
+        retry_busy(busy_timeout, || {
+            migrations::write_config_metadata(&connection, &config)
+        })?;
         repair_tracker_permissions(&paths)?;
         let persisted_calibration: f64 = connection.query_row(
             "SELECT calibration_weekly_points FROM config_metadata WHERE singleton = 1",
@@ -378,8 +393,11 @@ impl StateStore {
     }
 }
 
-fn retry_busy<T>(mut operation: impl FnMut() -> Result<T, StateError>) -> Result<T, StateError> {
-    let deadline = Instant::now() + BUSY_TIMEOUT;
+fn retry_busy<T>(
+    timeout: Duration,
+    mut operation: impl FnMut() -> Result<T, StateError>,
+) -> Result<T, StateError> {
+    let deadline = Instant::now() + timeout;
     loop {
         match operation() {
             Err(error) if is_busy(&error) && Instant::now() < deadline => {

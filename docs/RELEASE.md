@@ -1,36 +1,49 @@
-# Beta release policy
+# Experimental beta release policy
 
-Release `0.1.0-beta.1` is created only from an annotated tag named
-`v0.1.0-beta.1` on a clean commit whose public CI is green. The tag workflow
-checks that the tag and Cargo version agree, reruns formatting, lint, tests,
-lifecycle and packaging gates, verifies `SHA256SUMS`, and publishes the exact
-Linux x86_64 archive and crate as a GitHub prerelease.
+`0.1.0-beta.1` is an experimental beta only for Ubuntu 25.10 x86_64, installed
+from the checksummed standalone archive and exercised with Codex CLI 0.144.4.
+The Rust target in the filename is build metadata, not a general platform claim.
 
-Every archive includes `BUILD-INFO.json` with the source revision, target,
-toolchain versions, source timestamp, dirty-state flag, and `Cargo.lock` digest,
-plus an SPDX 2.3 `SBOM.spdx.json` generated from locked Cargo metadata. The
-release gate requires `source_dirty` to be `false` and validates representative
-root and runtime packages in the SBOM. Signatures remain deferred until the
-project has a repeatable keyless or maintained-key verification flow.
+The annotated tag `v0.1.0-beta.1` may be created only from a clean commit whose
+required public CI is green. The tag workflow reruns formatting, lint, tests,
+lifecycle and privacy gates, builds the archive and crate, verifies
+`SHA256SUMS`, and publishes a GitHub prerelease.
 
-Before pushing the tag, a maintainer must also record a clean-machine external
-tester run using only the README, release candidate archive, and checksum. A
-failed or missing external run blocks recommendation and tagging; it must not be
-converted into a documentation exception.
+Every archive contains `BUILD-INFO.json`, an SPDX 2.3 `SBOM.spdx.json`, the
+locked binary, documentation, and lifecycle helpers. These records are useful
+provenance, not cryptographic signatures.
 
-Stable release requires observation-mode feedback from several real users and
-does not follow automatically from a successful beta. Native adapter releases
-have their own compatibility policy and version identity.
+## Required before tagging
 
-## Maintainer release checklist
+- The full source and exact-artifact release gate passes from the frozen commit.
+- Public CI is green and protected `main` points at that commit.
+- Private vulnerability reporting is enabled and visible to a non-maintainer.
+- The real Codex `SessionStart`, `UserPromptSubmit`, and `Stop` hooks pass after
+  interactive trust approval, including changed-definition re-review.
+- The candidate archive is installed and uninstalled by following only public
+  onboarding, and sanitized evidence is recorded in `ACCEPTANCE.md`.
+- Public text consistently says experimental beta, local estimate, and the exact
+  tested environment.
 
-- [ ] Stage 12 state-permission and extracted artifact/crate privacy tests pass.
-- [ ] The candidate worktree is clean and `BUILD-INFO.json` records the frozen
-  SHA with `source_dirty: false`.
-- [ ] Every required public CI check is green and `main` protection is active.
-- [ ] Sanitized real hook trust, elapsed-window dogfood, and one independent clean
-  Linux x86_64 lifecycle are recorded in `docs/ACCEPTANCE.md`.
-- [ ] The repository's complete release gate passes from the frozen commit.
-- [ ] The annotated tag matches Cargo/plugin/docs versions.
-- [ ] The workflow-published archive and checksum are downloaded into a clean
-  directory and independently reverified before public recommendation.
+## Required after publication, before recommendation
+
+Download the workflow-published archive and `SHA256SUMS` into a new empty
+directory. Verify the checksum, install it, exercise all three trusted hooks,
+run `status` and `doctor`, and uninstall it. Compare its build identity and
+checksum with the frozen candidate evidence. Any mismatch blocks recommendation.
+
+Publication recovery is manual for this first beta. If the tag workflow partly
+fails, stop, inspect the release and tag, remove or correct inconsistent public
+artifacts deliberately, and rerun the entire verification. Do not describe the
+workflow as retry-safe.
+
+## Deferred beta follow-up
+
+Several naturally elapsed five-hour windows, independent clean-machine testing,
+database retention/compaction, broader portability, retry-safe publication,
+plugin-validator ownership, and automated dependency security-update handling
+remain open. Revisit them during beta and before any stable or broader support
+claim.
+
+Stable release requires sustained dogfood and real-user feedback; it does not
+follow automatically from a successful beta.

@@ -30,7 +30,9 @@ if old_url.search(joined):
 
 for value in [
     "https://github.com/snikmas/codex-usage-watch",
-    "Linux x86_64",
+    "Ubuntu 25.10 x86_64",
+    "Codex CLI 0.144.4",
+    "experimental beta",
     "macOS",
     "Windows",
     "0.1.0-beta.1",
@@ -40,13 +42,38 @@ for value in [
 
 support = (root / "docs/SUPPORT.md").read_text(encoding="utf-8")
 for statement in [
-    "Linux x86_64 standalone archive | Beta candidate",
-    "macOS Rust library and CLI | CI-configured preview",
-    "Windows Rust library and CLI | CI-configured build-only",
-    "Native Codex footer and `/status` adapter | Development preview",
+    "Ubuntu 25.10 x86_64 standalone archive | Experimental beta candidate",
+    "Other Linux distributions or architectures | Unverified",
+    "macOS library and CLI | Preview",
+    "Windows library and CLI | Build/test only",
+    "Native footer and `/status` adapter | Development preview",
 ]:
     if statement not in support:
         raise SystemExit(f"support matrix changed or contradicted: {statement}")
+
+for path in [
+    root / "README.md",
+    root / "docs/INSTALL.md",
+    root / "docs/SUPPORT.md",
+    root / "docs/RELEASE.md",
+    root / "docs/RELEASE_NOTES.md",
+]:
+    text = path.read_text(encoding="utf-8")
+    for unsupported in ["Linux x86_64", "all Linux", "general Linux support"]:
+        if unsupported.lower() in text.lower():
+            raise SystemExit(f"{path.relative_to(root)} contains unsupported platform claim {unsupported!r}")
+
+first_screen = " ".join((root / "README.md").read_text(encoding="utf-8").splitlines()[:35])
+first_screen = " ".join(first_screen.split())
+for value in [
+    "Experimental beta",
+    "Ubuntu 25.10 x86_64",
+    "local estimate",
+    "not official",
+    "private vulnerability reporting",
+]:
+    if value.lower() not in first_screen.lower():
+        raise SystemExit(f"README first screen is missing {value!r}")
 
 print("Repository URLs, versions, links, and support claims: PASS")
 PY

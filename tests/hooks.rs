@@ -137,19 +137,21 @@ fn database_contention_stays_inside_hook_timeout_and_fails_open() {
 
     let connection = Connection::open(state.path().join("state.sqlite3")).expect("open state");
     connection
-        .execute_batch("BEGIN IMMEDIATE")
+        .execute_batch("BEGIN EXCLUSIVE")
         .expect("hold writer lock");
     let started = Instant::now();
     let output = run_hook(
         &state,
-        "stop",
-        json!({"hook_event_name": "Stop", "transcript_path": null}),
+        "user-prompt-submit",
+        json!({"hook_event_name": "UserPromptSubmit", "transcript_path": null}),
     );
-    assert!(started.elapsed() < Duration::from_secs(5));
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(output.status.success());
     assert_eq!(
         serde_json::from_slice::<Value>(&output.stdout).expect("timeout fail-open JSON"),
         json!({"continue": true, "suppressOutput": true})
     );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("database is locked"));
 }
 
 #[test]
@@ -328,13 +330,18 @@ fn install_and_uninstall_are_explicit_reversible_and_preserve_other_hooks() {
 
 fn command_executable(command: &str, command_name: &str) -> PathBuf {
     let suffix = format!(" hook {command_name}");
-    PathBuf::from(
-        command
-            .strip_suffix(&suffix)
-            .expect("command has the correct hook event")
-            .trim()
-            .trim_matches('"'),
-    )
+    let encoded = command
+        .strip_suffix(&suffix)
+        .expect("command has the correct hook event")
+        .trim();
+    #[cfg(unix)]
+    if let Some(body) = encoded
+        .strip_prefix('\'')
+        .and_then(|value| value.strip_suffix('\''))
+    {
+        return PathBuf::from(body.replace("'\"'\"'", "'"));
+    }
+    PathBuf::from(encoded.trim_matches('"').replace("\\\"", "\""))
 }
 
 fn assert_paths_equivalent(actual: &Path, expected: &Path) {
@@ -354,6 +361,20 @@ fn assert_paths_equivalent(actual: &Path, expected: &Path) {
     }
 }
 
+#[cfg(unix)]
+fn publish_test_binary(destination: &Path) {
+    let staged = destination.with_file_name(".codex-5h.tmp");
+    fs::copy(env!("CARGO_BIN_EXE_codex-5h"), &staged).expect("stage tracker binary");
+    fs::File::open(&staged)
+        .expect("open staged tracker binary")
+        .sync_all()
+        .expect("sync staged tracker binary");
+    fs::rename(&staged, destination).expect("publish tracker binary atomically");
+    // The sandbox uses a bind-mounted filesystem where an immediately executed
+    // copy can briefly retain ETXTBSY after its writer closes.
+    std::thread::sleep(Duration::from_millis(20));
+}
+
 #[test]
 fn malformed_hooks_and_interrupted_temp_files_never_replace_user_configuration() {
     let home = tempfile::tempdir().expect("temporary Codex home");
@@ -369,6 +390,113 @@ fn malformed_hooks_and_interrupted_temp_files_never_replace_user_configuration()
     assert!(!output.status.success());
     assert_eq!(fs::read(&hooks_path).unwrap(), b"{not valid json");
     assert!(!home.path().join("hooks.json.codex-5h.bak").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn generated_hook_commands_execute_adversarial_paths_literally() {
+    let temp = tempfile::tempdir().expect("temporary adversarial path root");
+    let component = "bin space 'single' \"double\" $dollar `touch injected-backtick` $(touch injected-substitution) \\backslash";
+    let bin_dir = temp.path().join(component);
+    fs::create_dir_all(&bin_dir).expect("create adversarial binary directory");
+    let copied_binary = bin_dir.join("codex-5h");
+    publish_test_binary(&copied_binary);
+
+    let codex_home = temp.path().join("codex home");
+    let state = temp.path().join("state");
+    let install = Command::new(&copied_binary)
+        .args(["install", "--confirm"])
+        .env("CODEX_HOME", &codex_home)
+        .env("CODEX_USAGE_WATCH_HOME", &state)
+        .output()
+        .expect("install adversarial hook path");
+    assert!(
+        install.status.success(),
+        "{}",
+        String::from_utf8_lossy(&install.stderr)
+    );
+
+    let hooks: Value = serde_json::from_slice(
+        &fs::read(codex_home.join("hooks.json")).expect("read adversarial hooks"),
+    )
+    .expect("parse adversarial hooks");
+    for (wire_event, command_event) in [
+        ("SessionStart", "session-start"),
+        ("UserPromptSubmit", "user-prompt-submit"),
+        ("Stop", "stop"),
+    ] {
+        let command = hooks["hooks"][wire_event][0]["hooks"][0]["command"]
+            .as_str()
+            .expect("installed command");
+        assert_eq!(command_executable(command, command_event), copied_binary);
+
+        let mut child = Command::new("/bin/sh")
+            .args(["-c", command])
+            .current_dir(temp.path())
+            .env("CODEX_HOME", &codex_home)
+            .env("CODEX_USAGE_WATCH_HOME", &state)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("execute generated hook through POSIX shell");
+        child
+            .stdin
+            .take()
+            .expect("hook stdin")
+            .write_all(
+                json!({"hook_event_name": wire_event, "transcript_path": null})
+                    .to_string()
+                    .as_bytes(),
+            )
+            .expect("write hook JSON");
+        let output = child.wait_with_output().expect("wait for adversarial hook");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            serde_json::from_slice::<Value>(&output.stdout)
+                .expect("generated hook stdout remains JSON")["continue"],
+            true
+        );
+    }
+
+    assert!(!temp.path().join("injected-backtick").exists());
+    assert!(!temp.path().join("injected-substitution").exists());
+}
+
+// Linux filesystems can represent this byte sequence. macOS rejects it before
+// the installer can inspect the executable path, so there is no product-level
+// rejection path to exercise there.
+#[cfg(target_os = "linux")]
+#[test]
+fn hook_install_rejects_a_non_utf8_executable_path_without_writing_hooks() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let temp = tempfile::tempdir().expect("temporary non-UTF-8 path root");
+    let component = OsString::from_vec(b"invalid-utf8-\xff".to_vec());
+    let bin_dir = temp.path().join(component);
+    fs::create_dir_all(&bin_dir).expect("create non-UTF-8 binary directory");
+    let copied_binary = bin_dir.join("codex-5h");
+    publish_test_binary(&copied_binary);
+    let codex_home = temp.path().join("codex-home");
+
+    let output = Command::new(&copied_binary)
+        .args(["install", "--confirm"])
+        .env("CODEX_HOME", &codex_home)
+        .output()
+        .expect("attempt non-UTF-8 hook install");
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("cannot be represented safely"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!codex_home.join("hooks.json").exists());
 }
 
 #[test]
