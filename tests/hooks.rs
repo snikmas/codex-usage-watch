@@ -467,7 +467,10 @@ fn generated_hook_commands_execute_adversarial_paths_literally() {
     assert!(!temp.path().join("injected-substitution").exists());
 }
 
-#[cfg(unix)]
+// Linux filesystems can represent this byte sequence. macOS rejects it before
+// the installer can inspect the executable path, so there is no product-level
+// rejection path to exercise there.
+#[cfg(target_os = "linux")]
 #[test]
 fn hook_install_rejects_a_non_utf8_executable_path_without_writing_hooks() {
     use std::ffi::OsString;
