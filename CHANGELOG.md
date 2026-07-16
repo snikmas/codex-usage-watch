@@ -17,3 +17,5 @@
   distribution; the native Codex adapter remains a development preview.
 - Added a declared Rust 1.85 MSRV, pinned CI actions, dependency policy checks,
   a truthful platform support matrix, and an exact-artifact beta release gate.
+- Added an SPDX 2.3 dependency SBOM and build identity with source revision,
+  target/toolchain details, and the locked dependency digest to every archive.

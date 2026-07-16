@@ -1,13 +1,16 @@
+use std::error::Error;
+use std::fmt;
 use std::io::{self, Read};
 use std::process::ExitCode;
 
 use chrono::Utc;
 use codex_usage_watch::hooks::{
-    HookEvent, install_hooks, run_hook, uninstall_hooks, validate_installed_hooks,
+    HookAdapterError, HookEvent, install_hooks, run_hook, uninstall_hooks, validate_installed_hooks,
 };
 use codex_usage_watch::{
-    CalibrationReport, DiscoveryOptions, IngestOptions, StateStore, TrackerConfig, WindowStatus,
-    cached_release_metadata, discover_recent_transcripts, import_history, preview_history,
+    CalibrationReport, DiscoveryOptions, DomainError, IngestOptions, StateError, StateStore,
+    TrackerConfig, WindowStatus, cached_release_metadata, discover_recent_transcripts,
+    import_history, preview_history,
 };
 
 const FAIL_OPEN_JSON: &str = r#"{"continue":true,"suppressOutput":true}"#;
@@ -16,10 +19,54 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("codex-5h: {error}");
-            ExitCode::from(2)
+            let (code, category) = classify_error(error.as_ref());
+            eprintln!("codex-5h {category}: {error}");
+            ExitCode::from(code)
         }
     }
+}
+
+#[derive(Debug)]
+struct UsageError(String);
+
+impl fmt::Display for UsageError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl Error for UsageError {}
+
+fn usage_error(message: impl Into<String>) -> Box<dyn Error> {
+    Box::new(UsageError(message.into()))
+}
+
+fn classify_error(error: &(dyn Error + 'static)) -> (u8, &'static str) {
+    let mut current = Some(error);
+    while let Some(candidate) = current {
+        if candidate.downcast_ref::<UsageError>().is_some() {
+            return (2, "invalid usage");
+        }
+        if candidate
+            .downcast_ref::<HookAdapterError>()
+            .is_some_and(|error| matches!(error, HookAdapterError::ConfirmationRequired))
+        {
+            return (2, "invalid usage");
+        }
+        if candidate.downcast_ref::<DomainError>().is_some() {
+            return (3, "configuration error");
+        }
+        if candidate.downcast_ref::<StateError>().is_some_and(|error| {
+            matches!(
+                error,
+                StateError::StateDirectoryUnavailable | StateError::UnsupportedCalibrationIdentity
+            )
+        }) {
+            return (4, "unavailable data");
+        }
+        current = candidate.source();
+    }
+    (5, "runtime failure")
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
@@ -30,8 +77,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         [flag] if flag == "--version" || flag == "-V" || flag == "version" => {
             println!("codex-5h {}", env!("CARGO_PKG_VERSION"));
         }
+        [command, flag] if flag == "--help" || flag == "-h" => {
+            print_command_help(command)?;
+        }
+        [command, action, flag]
+            if command == "calibration"
+                && action == "apply"
+                && (flag == "--help" || flag == "-h") =>
+        {
+            print_calibration_apply_help();
+        }
         [command, event] if command == "hook" => {
-            let event = HookEvent::parse(event).ok_or("unknown hook event")?;
+            let event = HookEvent::parse(event)
+                .ok_or_else(|| usage_error(format!("unknown hook event {event:?}")))?;
             let mut input = String::new();
             io::stdin().read_to_string(&mut input)?;
             match run_hook(event, &input, Utc::now()) {
@@ -47,6 +105,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         [command, flag] if command == "install" && flag == "--confirm" => {
             let path = install_hooks(true)?;
             println!("Installed Codex usage-watch hooks in {}", path.display());
+            print_hook_trust_next_steps();
         }
         [command, flag] if command == "uninstall" && flag == "--confirm" => {
             let path = uninstall_hooks(true)?;
@@ -88,7 +147,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         [command, action, value, flag]
             if command == "calibration" && action == "apply" && flag == "--confirm" =>
         {
-            let value: f64 = value.parse()?;
+            let value: f64 = value
+                .parse()
+                .map_err(|_| usage_error("WEEKLY_POINTS must be a number"))?;
             let mut store = StateStore::open(TrackerConfig::from_env()?)?;
             store.apply_calibration(value, Utc::now())?;
             println!("Applied calibration {value:.3} weekly points to future local windows only.");
@@ -109,7 +170,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         _ => {
-            return Err("invalid arguments; run codex-5h --help for commands and examples".into());
+            return Err(usage_error(
+                "invalid arguments; run codex-5h --help or codex-5h COMMAND --help",
+            ));
         }
     }
     Ok(())
@@ -117,8 +180,81 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn print_help() {
     println!(
-        "Codex Usage Watch {}\n\nLocal, non-blocking five-hour usage awareness. Estimates are not official quota or billing data.\n\nUSAGE:\n  codex-5h <COMMAND> [OPTIONS]\n\nCOMMANDS:\n  setup [--preview|--skip-import|--import --confirm]  Consent-first history setup\n  status [--json]                                    Show the current projection\n  refresh [--transcript PATH]                        Bounded refresh (at most 8 recent files)\n  history [--json]                                   Show recent windows and control events\n  analyze [--json]                                   Inspect calibration evidence\n  reset --confirm                                    Archive the current local window\n  doctor [--compat [--refresh-releases]]             Validate installation and compatibility\n  calibration apply POINTS --confirm                 Apply reviewed calibration to future windows\n  backup DESTINATION.sqlite3 --confirm               Create an integrity-checked database backup\n  install --confirm | uninstall --confirm            Add or remove only this tool's hooks\n\nOPTIONS:\n  -h, --help       Print help and exit 0\n  -V, --version    Print version and exit 0\n\nEXAMPLES:\n  codex-5h setup --preview\n  codex-5h status --json\n  codex-5h refresh\n  codex-5h doctor\n\nEXIT STATUS:\n  0 success; 2 invalid arguments, configuration, or runtime failure",
+        "Codex Usage Watch {}\n\nLocal, non-blocking five-hour usage awareness. Estimates are not official quota or billing data.\n\nUSAGE:\n  codex-5h <COMMAND> [OPTIONS]\n\nCOMMANDS:\n  setup [--preview|--skip-import|--import --confirm]  Consent-first history setup\n  status [--json]                                    Show the current projection\n  refresh [--transcript PATH]                        Bounded refresh (at most 8 recent files)\n  history [--json]                                   Show recent windows and control events\n  analyze [--json]                                   Inspect calibration evidence\n  reset --confirm                                    Archive the current local window\n  doctor [--compat [--refresh-releases]]             Validate installation and compatibility\n  calibration apply POINTS --confirm                 Apply reviewed calibration to future windows\n  backup DESTINATION.sqlite3 --confirm               Create an integrity-checked database backup\n  install --confirm | uninstall --confirm            Add or remove only this tool's hooks\n\nOPTIONS:\n  -h, --help       Print help and exit 0\n  -V, --version    Print version and exit 0\n\nEXAMPLES:\n  codex-5h setup --preview\n  codex-5h status --json\n  codex-5h refresh\n  codex-5h doctor\n\nEXIT STATUS:\n  0 success\n  2 invalid command or arguments\n  3 invalid configuration\n  4 required data is unavailable\n  5 runtime or I/O failure",
         env!("CARGO_PKG_VERSION")
+    );
+}
+
+fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
+    let (usage, description) = match command {
+        "setup" => (
+            "codex-5h setup [--preview|--skip-import|--import --confirm]",
+            "Preview and optionally import privacy-filtered historical rate-limit metadata.",
+        ),
+        "status" => (
+            "codex-5h status [--json]",
+            "Show the current estimate, weekly cost, freshness, and calibration.",
+        ),
+        "refresh" => (
+            "codex-5h refresh [--transcript PATH]",
+            "Refresh one explicit transcript or at most eight recent transcripts.",
+        ),
+        "history" => (
+            "codex-5h history [--json]",
+            "List recent local windows and control events.",
+        ),
+        "analyze" => (
+            "codex-5h analyze [--json]",
+            "Report calibration evidence, confidence, spread, and drift.",
+        ),
+        "reset" => (
+            "codex-5h reset --confirm",
+            "Archive the current local window and record the control action.",
+        ),
+        "doctor" => (
+            "codex-5h doctor [--compat [--refresh-releases]]",
+            "Report installation checks independently; detailed compatibility is optional.",
+        ),
+        "calibration" => (
+            "codex-5h calibration apply WEEKLY_POINTS --confirm",
+            "Apply a reviewed exact-identity calibration to future windows only.",
+        ),
+        "backup" => (
+            "codex-5h backup DESTINATION.sqlite3 --confirm",
+            "Create a consistent SQLite backup; the packaged helper also checks integrity.",
+        ),
+        "install" => (
+            "codex-5h install --confirm",
+            "Install three absolute-path Codex hook definitions, then review them in /hooks.",
+        ),
+        "uninstall" => (
+            "codex-5h uninstall --confirm",
+            "Remove only Codex Usage Watch hook handlers and preserve state.",
+        ),
+        "hook" => (
+            "codex-5h hook <session-start|user-prompt-submit|stop>",
+            "Codex lifecycle protocol adapter; always fails open with JSON stdout.",
+        ),
+        _ => return Err(usage_error(format!("unknown command {command:?}"))),
+    };
+    println!(
+        "{description}\n\nUSAGE:\n  {usage}\n\nRun codex-5h --help for all commands and exit-status meanings."
+    );
+    Ok(())
+}
+
+fn print_calibration_apply_help() {
+    println!(
+        "Apply a reviewed exact-identity calibration to future windows only.\n\nUSAGE:\n  codex-5h calibration apply WEEKLY_POINTS --confirm\n\nHistorical windows keep their original calibration ID and value."
+    );
+}
+
+fn print_hook_trust_next_steps() {
+    println!(
+        "Required next step  start or restart Codex, open /hooks, inspect the source and all three commands, trust them, then start a fresh session"
+    );
+    println!(
+        "Trust status        codex-5h can validate configuration and paths; trust is confirmed only inside Codex"
     );
 }
 
@@ -220,15 +356,17 @@ fn run_setup(mode: SetupMode) -> Result<(), Box<dyn std::error::Error>> {
 
 fn print_status(json: bool) -> Result<(), Box<dyn std::error::Error>> {
     let config = TrackerConfig::from_env()?;
-    let mut store = StateStore::open(config.clone())?;
-    let display = store.load_or_recover_display(Utc::now())?;
+    let display = StateStore::load_display_read_only(&config, Utc::now())?;
+    let active_calibration = display
+        .calibration_weekly_points
+        .unwrap_or_else(|| config.calibration_weekly_points());
     if json {
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
                 "contract": "codex-usage-watch.status.v1",
                 "display": display,
-                "active_calibration_weekly_points": store.active_calibration(),
+                "active_calibration_weekly_points": active_calibration,
                 "warning_thresholds_percent": config.warning_thresholds(),
             }))?
         );
@@ -261,7 +399,7 @@ fn print_status(json: bool) -> Result<(), Box<dyn std::error::Error>> {
             WindowStatus::Unknown => "unavailable".to_string(),
         }
     );
-    println!("Calibration          {:.3}", store.active_calibration());
+    println!("Calibration          {active_calibration:.3}");
     Ok(())
 }
 
@@ -404,29 +542,121 @@ fn print_compatibility_doctor(refresh_releases: bool) -> Result<(), Box<dyn std:
 }
 
 fn print_doctor() -> Result<(), Box<dyn std::error::Error>> {
-    let mut store = StateStore::open(TrackerConfig::from_env()?)?;
-    let schema = store.schema_version()?;
-    let display = store.load_or_recover_display(Utc::now())?;
-    let executable = std::env::current_exe()?;
+    let mut failures = Vec::new();
+    let executable = match std::env::current_exe() {
+        Ok(path) => {
+            println!("Executable          {}", path.display());
+            Some(path)
+        }
+        Err(error) => {
+            println!("Executable          unavailable ({error})");
+            failures.push(format!("executable: {error}"));
+            None
+        }
+    };
+
+    let mut store = TrackerConfig::from_env()
+        .map_err(|error| error.to_string())
+        .and_then(|config| StateStore::open(config).map_err(|error| error.to_string()));
+    match &mut store {
+        Ok(store) => {
+            println!("State directory     {}", store.paths().directory.display());
+            match store.schema_version() {
+                Ok(schema) => println!("Database schema     v{schema} supported"),
+                Err(error) => {
+                    println!("Database schema     unavailable ({error})");
+                    failures.push(format!("database schema: {error}"));
+                }
+            }
+            match store.snapshot_count() {
+                Ok(count) => println!("Database snapshots  {count}"),
+                Err(error) => {
+                    println!("Database snapshots  unavailable ({error})");
+                    failures.push(format!("database snapshots: {error}"));
+                }
+            }
+            match store.observation_count() {
+                Ok(count) => println!("Observations        {count}"),
+                Err(error) => {
+                    println!("Observations        unavailable ({error})");
+                    failures.push(format!("observations: {error}"));
+                }
+            }
+            match store.diagnostic_count() {
+                Ok(count) => println!("Diagnostics         {count}"),
+                Err(error) => {
+                    println!("Diagnostics         unavailable ({error})");
+                    failures.push(format!("diagnostics: {error}"));
+                }
+            }
+            match store.load_or_recover_display(Utc::now()) {
+                Ok(display) => println!(
+                    "Display projection  v{} · {:?}",
+                    display.schema_version, display.status
+                ),
+                Err(error) => {
+                    println!("Display projection  unavailable ({error})");
+                    failures.push(format!("display projection: {error}"));
+                }
+            }
+            let compatibility = store
+                .current_compatibility_identity(Some(&detect_codex_version()), None, None)
+                .and_then(|(identity, supported)| {
+                    store.check_compatibility(identity, supported, Utc::now())
+                });
+            match compatibility {
+                Ok(check) => println!(
+                    "Compatibility      {:?} · {}",
+                    check.result, check.rate_limit_check
+                ),
+                Err(error) => {
+                    println!("Compatibility      unavailable ({error})");
+                    failures.push(format!("compatibility: {error}"));
+                }
+            }
+        }
+        Err(error) => {
+            println!("State directory     unavailable ({error})");
+            println!("Database schema     unavailable (state could not be opened)");
+            println!("Database snapshots  unavailable (state could not be opened)");
+            println!("Observations        unavailable (state could not be opened)");
+            println!("Diagnostics         unavailable (state could not be opened)");
+            println!("Display projection  unavailable (state could not be opened)");
+            println!("Compatibility      unavailable (state could not be opened)");
+            failures.push(format!("state: {error}"));
+        }
+    }
+
     let codex_home = codex_home();
     let hooks_path = codex_home.join("hooks.json");
-    validate_installed_hooks(&executable)?;
+    match executable.as_deref() {
+        Some(executable) => match validate_installed_hooks(executable) {
+            Ok(_) => println!(
+                "Plugin hooks        configured and path-valid · trust must be confirmed inside Codex · {}",
+                hooks_path.display()
+            ),
+            Err(error) => {
+                println!(
+                    "Plugin hooks        missing/malformed or path-invalid · {} ({error})",
+                    hooks_path.display()
+                );
+                failures.push(format!("plugin hooks: {error}"));
+            }
+        },
+        None => {
+            println!(
+                "Plugin hooks        path validation unavailable · trust must be confirmed inside Codex · {}",
+                hooks_path.display()
+            );
+            failures.push("plugin hooks: executable path unavailable".to_string());
+        }
+    }
     let sessions = codex_home.join("sessions");
     let sessions_access = if sessions.exists() {
         std::fs::read_dir(&sessions).is_ok()
     } else {
         true
     };
-    println!("Executable          {}", executable.display());
-    println!("State directory     {}", store.paths().directory.display());
-    println!("Database schema     v{schema} supported");
-    println!("Database snapshots  {}", store.snapshot_count()?);
-    println!("Observations        {}", store.observation_count()?);
-    println!("Diagnostics         {}", store.diagnostic_count()?);
-    println!(
-        "Display projection  v{} · {:?}",
-        display.schema_version, display.status
-    );
     println!(
         "Session metadata    {}",
         if sessions_access {
@@ -435,13 +665,18 @@ fn print_doctor() -> Result<(), Box<dyn std::error::Error>> {
             "unreadable"
         }
     );
-    println!(
-        "Plugin hooks        installed and valid · {}",
-        hooks_path.display()
-    );
     println!("Requests continue   yes (all hooks fail open)");
     if !sessions_access {
-        return Err("Codex session directory exists but is not readable".into());
+        failures
+            .push("session metadata: Codex session directory exists but is not readable".into());
+    }
+    if !failures.is_empty() {
+        return Err(format!(
+            "doctor found {} independent issue(s): {}",
+            failures.len(),
+            failures.join("; ")
+        )
+        .into());
     }
     Ok(())
 }

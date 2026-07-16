@@ -1,12 +1,13 @@
 use std::fs;
 use std::io::Write;
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{Arc, Barrier, Mutex};
+use std::thread;
 
 use chrono::{DateTime, TimeDelta, Utc};
 use codex_usage_watch::{
-    CompatibilityResult, IngestOptions, StateStore, TrackerConfig, WindowStatus,
-    cached_release_metadata,
+    CompatibilityIdentity, CompatibilityResult, IngestOptions, StateStore, TrackerConfig,
+    WindowStatus, cached_release_metadata,
 };
 use tempfile::TempDir;
 
@@ -114,6 +115,57 @@ fn unseen_identity_checks_once_and_new_model_is_review_not_reset() {
     assert_ne!(windows[0].0, windows[1].0);
     assert_eq!(windows[1].0, inherited.calibration_id);
     assert_eq!(windows[1].1, "inherited_unvalidated");
+}
+
+#[test]
+fn simultaneous_first_seen_checks_commit_one_complete_compatibility_transition() {
+    let temp = TempDir::new().unwrap();
+    let state = temp.path().join("state");
+    drop(StateStore::open_in(&state, TrackerConfig::default()).unwrap());
+    let identity = CompatibilityIdentity {
+        codex_version: "codex-cli-concurrent".into(),
+        plan_type: "plus".into(),
+        model_slug: "gpt-concurrent".into(),
+        service_tier: "default".into(),
+        schema_fingerprint: "fixture-concurrent".into(),
+    };
+    let barrier = Arc::new(Barrier::new(2));
+    let handles = (0..2)
+        .map(|_| {
+            let state = state.clone();
+            let identity = identity.clone();
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                let mut store = StateStore::open_in(state, TrackerConfig::default()).unwrap();
+                barrier.wait();
+                store
+                    .check_compatibility(identity, true, dt("2030-01-01T12:00:00Z"))
+                    .unwrap()
+            })
+        })
+        .collect::<Vec<_>>();
+    let checks = handles
+        .into_iter()
+        .map(|handle| handle.join().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(checks.iter().filter(|check| check.first_seen).count(), 1);
+
+    let store = StateStore::open_in(&state, TrackerConfig::default()).unwrap();
+    let connection = rusqlite::Connection::open(&store.paths().database).unwrap();
+    let result_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM compatibility_results", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let generation: String = connection
+        .query_row(
+            "SELECT current_compatibility_generation FROM config_metadata WHERE singleton = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(result_count, 1);
+    assert_eq!(generation, identity.key());
 }
 
 #[test]

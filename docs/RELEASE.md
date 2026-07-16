@@ -6,6 +6,13 @@ checks that the tag and Cargo version agree, reruns formatting, lint, tests,
 lifecycle and packaging gates, verifies `SHA256SUMS`, and publishes the exact
 Linux x86_64 archive and crate as a GitHub prerelease.
 
+Every archive includes `BUILD-INFO.json` with the source revision, target,
+toolchain versions, source timestamp, dirty-state flag, and `Cargo.lock` digest,
+plus an SPDX 2.3 `SBOM.spdx.json` generated from locked Cargo metadata. The
+release gate requires `source_dirty` to be `false` and validates representative
+root and runtime packages in the SBOM. Signatures remain deferred until the
+project has a repeatable keyless or maintained-key verification flow.
+
 Before pushing the tag, a maintainer must also record a clean-machine external
 tester run using only the README, release candidate archive, and checksum. A
 failed or missing external run blocks recommendation and tagging; it must not be

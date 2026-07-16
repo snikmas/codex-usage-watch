@@ -1,5 +1,6 @@
 use std::fs;
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -265,10 +266,37 @@ fn install_and_uninstall_are_explicit_reversible_and_preserve_other_hooks() {
     )
     .expect("parse installed hooks");
     let encoded = installed.to_string();
-    assert!(encoded.contains(env!("CARGO_BIN_EXE_codex-5h")));
     assert_eq!(encoded.matches("session-start").count(), 1);
     assert_eq!(encoded.matches("user-prompt-submit").count(), 1);
     assert_eq!(encoded.matches(" hook stop").count(), 1);
+    for (event, command_name) in [
+        ("SessionStart", "session-start"),
+        ("UserPromptSubmit", "user-prompt-submit"),
+        ("Stop", "stop"),
+    ] {
+        let handlers = installed["hooks"][event]
+            .as_array()
+            .expect("event groups")
+            .iter()
+            .flat_map(|group| group["hooks"].as_array().expect("handlers"));
+        let matching: Vec<_> = handlers
+            .filter(|handler| {
+                handler["command"]
+                    .as_str()
+                    .is_some_and(|command| command.ends_with(&format!(" hook {command_name}")))
+            })
+            .collect();
+        assert_eq!(matching.len(), 1, "exactly one installed {event} handler");
+        assert_eq!(matching[0]["type"], "command");
+        assert_eq!(matching[0]["timeout"], 5);
+        let executable = command_executable(
+            matching[0]["command"]
+                .as_str()
+                .expect("installed command string"),
+            command_name,
+        );
+        assert_paths_equivalent(&executable, Path::new(env!("CARGO_BIN_EXE_codex-5h")));
+    }
 
     for _ in 0..2 {
         assert!(
@@ -296,6 +324,34 @@ fn install_and_uninstall_are_explicit_reversible_and_preserve_other_hooks() {
     )
     .expect("backup remains recoverable JSON");
     assert!(backup.to_string().contains("other"));
+}
+
+fn command_executable(command: &str, command_name: &str) -> PathBuf {
+    let suffix = format!(" hook {command_name}");
+    PathBuf::from(
+        command
+            .strip_suffix(&suffix)
+            .expect("command has the correct hook event")
+            .trim()
+            .trim_matches('"'),
+    )
+}
+
+fn assert_paths_equivalent(actual: &Path, expected: &Path) {
+    let actual = fs::canonicalize(actual).expect("installed executable resolves");
+    let expected = fs::canonicalize(expected).expect("Cargo executable resolves");
+    if cfg!(windows) {
+        assert!(
+            actual
+                .to_string_lossy()
+                .eq_ignore_ascii_case(&expected.to_string_lossy()),
+            "Windows executable paths differ: {} != {}",
+            actual.display(),
+            expected.display()
+        );
+    } else {
+        assert_eq!(actual, expected);
+    }
 }
 
 #[test]

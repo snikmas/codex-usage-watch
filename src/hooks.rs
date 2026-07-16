@@ -372,6 +372,27 @@ fn hook_command(executable: &Path, event: HookEvent) -> String {
     format!("\"{executable}\" hook {}", event.command_name())
 }
 
+fn hook_command_matches(command: &str, expected_executable: &Path, event: HookEvent) -> bool {
+    let suffix = format!(" hook {}", event.command_name());
+    let Some(executable) = command.strip_suffix(&suffix) else {
+        return false;
+    };
+    let executable = Path::new(executable.trim().trim_matches('"'));
+    paths_equivalent(executable, expected_executable)
+}
+
+fn paths_equivalent(actual: &Path, expected: &Path) -> bool {
+    let actual = fs::canonicalize(actual).unwrap_or_else(|_| actual.to_path_buf());
+    let expected = fs::canonicalize(expected).unwrap_or_else(|_| expected.to_path_buf());
+    if cfg!(windows) {
+        actual
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&expected.to_string_lossy())
+    } else {
+        actual == expected
+    }
+}
+
 fn is_owned_handler(handler: &Value, event: HookEvent) -> bool {
     let Some(command) = handler.get("command").and_then(Value::as_str) else {
         return false;
@@ -417,7 +438,6 @@ pub fn validate_installed_hooks(expected_executable: &Path) -> Result<PathBuf, H
         HookEvent::UserPromptSubmit,
         HookEvent::Stop,
     ] {
-        let expected = hook_command(expected_executable, event);
         let matching = hooks
             .get(event.wire_name())
             .and_then(Value::as_array)
@@ -425,7 +445,14 @@ pub fn validate_installed_hooks(expected_executable: &Path) -> Result<PathBuf, H
             .flatten()
             .filter_map(|group| group.get("hooks").and_then(Value::as_array))
             .flatten()
-            .filter(|handler| handler.get("command").and_then(Value::as_str) == Some(&expected))
+            .filter(|handler| {
+                handler
+                    .get("command")
+                    .and_then(Value::as_str)
+                    .is_some_and(|command| {
+                        hook_command_matches(command, expected_executable, event)
+                    })
+            })
             .any(|handler| {
                 handler.get("type").and_then(Value::as_str) == Some("command")
                     && handler.get("timeout").and_then(Value::as_u64) == Some(HOOK_TIMEOUT_SECONDS)

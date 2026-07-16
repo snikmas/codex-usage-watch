@@ -125,6 +125,22 @@ Installation alone never scans historical session files. Ordinary SessionStart
 also performs only cheap state/identity checks; live transcript cursors advance
 on lifecycle events that provide a transcript path.
 
+Hook configuration is not the same as hook trust. After installing or changing
+the hooks:
+
+1. Start or restart Codex.
+2. Open `/hooks`.
+3. Inspect the hook source and the exact `SessionStart`, `UserPromptSubmit`, and
+   `Stop` commands. Each must use the expected absolute `codex-5h` path and a
+   five-second timeout.
+4. Trust the reviewed definitions, then start a fresh Codex session.
+
+Codex records trust against the current hook definition. A new or changed
+non-managed hook receives a different hash and may be skipped until you review
+and trust it again. `codex-5h doctor` can prove that the configuration is
+well-formed and path-valid, but it deliberately reports that trust must be
+confirmed inside Codex.
+
 ## Commands
 
 ```text
@@ -154,9 +170,11 @@ execute instructions or modify calibration.
 
 `history` lists the 20 newest local windows and manual-control audit events.
 `reset --confirm` archives the current local window without deleting snapshots;
-the next structured observation starts a new window. `doctor` validates the
-installed executable, state/schema, projection, session-directory access, and
-hook configuration. `doctor --compat` performs the separate compatibility check.
+the next structured observation starts a new window. `doctor` reports executable,
+state/schema, projection, session-directory, hook configuration/path, and basic
+compatibility checks independently before returning failure. It cannot prove the
+interactive Codex trust decision. `doctor --compat` provides the detailed
+compatibility report.
 
 `status --json` is the stable `codex-usage-watch.status.v1` machine contract.
 `refresh` checks at most eight transcripts from the last two days, or exactly
@@ -245,8 +263,9 @@ installation and removal.
 - Command not found: invoke the absolute path printed by `scripts/install.sh`
   or add `$HOME/.local/bin` (or your chosen `PREFIX/bin`) to `PATH`.
 - Missing, malformed, or moved hooks: rerun the installed binary's
-  `install --confirm`, then `doctor`. Doctor requires all three well-formed
-  handlers to point at that exact executable.
+  `install --confirm`, then repeat the `/hooks` review/trust flow and run `doctor`.
+  Doctor requires all three well-formed handlers to point at the equivalent
+  canonical executable path but does not claim they are trusted.
 - Unsupported schema: run `codex-5h doctor --compat`. Tracking remains
   non-blocking and the estimate becomes unknown instead of guessing.
 - Damaged hook configuration: stop Codex and restore
@@ -269,6 +288,14 @@ build/test preview pending a real user lifecycle run, and Windows is build-only
 with no supported native installer. Plugin marketplace installation is not a
 beta route. See the authoritative [support matrix](docs/SUPPORT.md),
 [contribution guide](CONTRIBUTING.md), and [release policy](docs/RELEASE.md).
+
+Public project links:
+
+- [installation guide](https://github.com/snikmas/codex-usage-watch/blob/main/docs/INSTALL.md)
+- [release artifacts](https://github.com/snikmas/codex-usage-watch/releases)
+- [issues and support requests](https://github.com/snikmas/codex-usage-watch/issues)
+- [private security advisories](https://github.com/snikmas/codex-usage-watch/security/advisories/new)
+- [support matrix](https://github.com/snikmas/codex-usage-watch/blob/main/docs/SUPPORT.md)
 
 ## Optional native Codex fork
 

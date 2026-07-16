@@ -21,6 +21,7 @@ fi
 
 if [[ "${INSTALL_HOOKS:-0}" == "1" ]]; then
   "$BIN_DIR/codex-5h" install --confirm
+  echo "Required: start or restart Codex, open /hooks, inspect the source and all three commands, trust them, then start a fresh session."
 fi
 
 INSTALLED_VERSION="$("$BIN_DIR/codex-5h" --version | awk '{print $2}')"

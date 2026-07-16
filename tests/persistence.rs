@@ -345,6 +345,35 @@ fn display_projection_has_versioned_used_left_freshness_and_calibration_fields()
 }
 
 #[test]
+fn read_only_display_refreshes_freshness_without_rewriting_the_projection() {
+    let temp = TempDir::new().unwrap();
+    let config = TrackerConfig::new(
+        15.8,
+        TimeDelta::hours(5),
+        TimeDelta::minutes(15),
+        vec![75, 90, 100],
+        10,
+        Some(temp.path().to_path_buf()),
+    )
+    .unwrap();
+    let mut store = StateStore::open(config.clone()).unwrap();
+    store
+        .ingest(
+            fixture_snapshots("normal_growth.jsonl"),
+            dt("2030-01-01T12:10:00Z"),
+        )
+        .unwrap();
+    let before = fs::read(&store.paths().display).unwrap();
+    drop(store);
+
+    let display = StateStore::load_display_read_only(&config, dt("2030-01-01T12:21:00Z")).unwrap();
+    assert_eq!(display.status, WindowStatus::Stale);
+    assert!(display.stale);
+    assert_eq!(display.data_age_seconds, Some(16 * 60));
+    assert_eq!(fs::read(temp.path().join("display.json")).unwrap(), before);
+}
+
+#[test]
 fn fresh_real_five_hour_window_has_priority_over_local_estimate() {
     let temp = TempDir::new().unwrap();
     let transcript = temp.path().join("dual.jsonl");

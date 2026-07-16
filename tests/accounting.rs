@@ -310,3 +310,99 @@ fn invalid_domain_values_are_rejected_and_rounding_never_returns_negative_zero()
     assert_eq!(round_weekly_points(-0.01).to_bits(), 0.0_f64.to_bits());
     assert_eq!(round_five_hour_percent(113.924), 114);
 }
+
+#[test]
+fn reset_order_duplicate_and_expiry_cases_remain_deterministic() {
+    struct Case {
+        name: &'static str,
+        snapshots: Vec<WeeklySnapshot>,
+        expected_start: &'static str,
+        expected_weekly_points: f64,
+        expected_archived_windows: usize,
+    }
+
+    let ordered = [
+        snapshot("ordered", 0, "2030-01-01T12:00:00Z", 20.0, 1_893_974_400),
+        snapshot("ordered", 1, "2030-01-01T12:05:00Z", 22.0, 1_893_974_400),
+        snapshot("ordered", 2, "2030-01-01T12:10:00Z", 24.0, 1_893_974_400),
+    ];
+    let reset = [
+        snapshot("reset-table", 0, "2030-01-01T12:00:00Z", 98.0, 100),
+        snapshot("reset-table", 1, "2030-01-01T12:05:00Z", 99.0, 100),
+        snapshot("reset-table", 2, "2030-01-01T12:10:00Z", 1.0, 200),
+        snapshot("reset-table", 3, "2030-01-01T12:15:00Z", 3.0, 200),
+    ];
+    let expiry = [
+        snapshot("expiry-table", 0, "2030-01-01T12:00:00Z", 20.0, 100),
+        snapshot("expiry-table", 1, "2030-01-01T16:59:59Z", 22.0, 100),
+        snapshot("expiry-table", 2, "2030-01-01T17:00:00Z", 25.0, 100),
+        snapshot("expiry-table", 3, "2030-01-01T17:05:00Z", 26.0, 100),
+    ];
+
+    let cases = [
+        Case {
+            name: "out-of-order input and duplicates",
+            snapshots: vec![
+                ordered[2].clone(),
+                ordered[1].clone(),
+                ordered[0].clone(),
+                ordered[1].clone(),
+            ],
+            expected_start: "2030-01-01T12:00:00Z",
+            expected_weekly_points: 4.0,
+            expected_archived_windows: 0,
+        },
+        Case {
+            name: "weekly reset and duplicate reset event",
+            snapshots: vec![
+                reset[2].clone(),
+                reset[0].clone(),
+                reset[2].clone(),
+                reset[3].clone(),
+                reset[1].clone(),
+            ],
+            expected_start: "2030-01-01T12:00:00Z",
+            expected_weekly_points: 4.0,
+            expected_archived_windows: 0,
+        },
+        Case {
+            name: "expiry starts a clean baseline despite duplicate boundary input",
+            snapshots: vec![
+                expiry[3].clone(),
+                expiry[2].clone(),
+                expiry[0].clone(),
+                expiry[2].clone(),
+                expiry[1].clone(),
+            ],
+            expected_start: "2030-01-01T17:00:00Z",
+            expected_weekly_points: 1.0,
+            expected_archived_windows: 1,
+        },
+    ];
+
+    for case in cases {
+        let mut engine = AccountingEngine::new(TrackerConfig::default());
+        let outcomes = engine.apply_ordered(case.snapshots);
+        let reading = &outcomes.last().unwrap().reading;
+        assert_eq!(
+            reading.window_started_at,
+            dt(case.expected_start),
+            "{}",
+            case.name
+        );
+        assert_eq!(
+            reading.weekly_points, case.expected_weekly_points,
+            "{}",
+            case.name
+        );
+        assert_eq!(
+            outcomes
+                .iter()
+                .filter(|outcome| outcome.archived_reading.is_some())
+                .count(),
+            case.expected_archived_windows,
+            "{}",
+            case.name
+        );
+    }
+}
