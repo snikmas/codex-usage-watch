@@ -23,9 +23,14 @@ pub fn ensure_private_directory(path: &Path) -> io::Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let mut builder = DirBuilder::new();
         #[cfg(unix)]
-        builder.mode(PRIVATE_DIRECTORY_MODE);
+        let builder = {
+            let mut builder = DirBuilder::new();
+            builder.mode(PRIVATE_DIRECTORY_MODE);
+            builder
+        };
+        #[cfg(not(unix))]
+        let builder = DirBuilder::new();
         match builder.create(path) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
