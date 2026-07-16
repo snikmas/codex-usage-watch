@@ -192,6 +192,34 @@ fn a_changed_reset_timestamp_is_reset_evidence_even_without_a_decrease() {
 }
 
 #[test]
+fn one_second_reset_timestamp_jitter_does_not_recount_concurrent_usage() {
+    let mut engine = AccountingEngine::new(TrackerConfig::default());
+    let outcomes = engine.apply_ordered([
+        snapshot("session-a", 0, "2030-01-01T12:00:00Z", 10.0, 1_893_974_400),
+        snapshot("session-b", 0, "2030-01-01T12:01:00Z", 17.0, 1_893_974_401),
+        snapshot("session-a", 1, "2030-01-01T12:02:00Z", 17.0, 1_893_974_400),
+        snapshot("session-b", 1, "2030-01-01T12:03:00Z", 31.0, 1_893_974_401),
+        snapshot("session-a", 2, "2030-01-01T12:04:00Z", 31.0, 1_893_974_400),
+    ]);
+
+    assert_eq!(outcomes.last().unwrap().reading.weekly_points, 21.0);
+}
+
+#[test]
+fn a_late_snapshot_from_an_older_reset_epoch_does_not_affect_the_meter() {
+    let mut engine = AccountingEngine::new(TrackerConfig::default());
+    let outcomes = engine.apply_ordered([
+        snapshot("old", 0, "2030-01-01T12:00:00Z", 98.0, 1_893_542_400),
+        snapshot("new", 0, "2030-01-01T12:01:00Z", 2.0, 1_894_147_200),
+        snapshot("old", 1, "2030-01-01T12:02:00Z", 99.0, 1_893_542_400),
+        snapshot("new", 1, "2030-01-01T12:03:00Z", 3.0, 1_894_147_200),
+    ]);
+
+    assert_eq!(outcomes.last().unwrap().reading.weekly_points, 3.0);
+    assert!(!outcomes[2].accepted);
+}
+
+#[test]
 fn duplicate_and_older_events_do_not_change_state() {
     let first = snapshot("session-a", 0, "2030-01-01T12:00:00Z", 20.0, 1_893_974_400);
     let second = snapshot(

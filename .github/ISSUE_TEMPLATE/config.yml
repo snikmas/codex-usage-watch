@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private security report
+    url: https://github.com/snikmas/codex-usage-watch/security/advisories/new
+    about: Report vulnerabilities privately. Never put security details in a public issue.

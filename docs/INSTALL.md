@@ -1,16 +1,17 @@
-# Standalone beta installation
+# Install the experimental beta
 
-The only supported beta distribution is the checksummed standalone Linux
-x86_64 archive. It contains `codex-5h`, documentation, and explicit install,
-verification, and uninstall scripts. It does not replace the official Codex
-binary and does not include the native footer adapter.
+The verified public route is the checksummed standalone archive on Ubuntu 25.10
+x86_64 with Codex CLI 0.144.4. Other Linux distributions may work but have not
+been verified. The `x86_64-unknown-linux-gnu` filename is a Rust build target,
+not a general compatibility promise.
+
+`0.1.0-beta.1` is still a candidate. Do not follow an unofficial download link;
+wait for the prerelease on the repository's [Releases page](https://github.com/snikmas/codex-usage-watch/releases).
 
 ## Install and verify
 
-Download exactly the Linux x86_64 archive and `SHA256SUMS` from the same beta
-release into a blank directory. `SHA256SUMS` intentionally contains only the
-archive, so the documented check does not require the separately published
-source crate:
+Download the archive and `SHA256SUMS` from the same prerelease into a new empty
+directory. Check the archive before running anything from it:
 
 ```bash
 sha256sum -c SHA256SUMS
@@ -22,26 +23,28 @@ PREFIX="$HOME/.local" INSTALL_HOOKS=1 scripts/install.sh
 PREFIX="$HOME/.local" scripts/verify-install.sh
 ```
 
-`BUILD-INFO.json` records the source revision, target, Rust/Cargo versions, and
-`Cargo.lock` digest used for the archive. `SBOM.spdx.json` is the matching SPDX
-2.3 software bill of materials. The release gate verifies both files from the
-extracted archive; neither file is a cryptographic signature.
+The archive contains `codex-5h`, this documentation, install/uninstall helpers,
+build identity, and an SPDX dependency list. It does not replace Codex and does
+not contain the optional native footer.
 
-Complete the Codex trust flow after installation:
+## Trust the hooks in Codex
+
+Installation writes three user hooks, but non-managed hooks do not run until
+you approve their exact definitions.
 
 1. Start or restart Codex and open `/hooks`.
-2. Inspect the hook source and the exact `SessionStart`, `UserPromptSubmit`, and
-   `Stop` definitions. Each must call the absolute installed `codex-5h` path and
-   use a five-second timeout.
-3. Trust the reviewed definitions, then start a fresh Codex session.
+2. Review `SessionStart`, `UserPromptSubmit`, and `Stop`.
+3. Confirm that each command uses the absolute installed `codex-5h` path and a
+   five-second timeout.
+4. Trust all three definitions, then start a fresh session.
 
-Codex records trust for the current hook-definition hash. A newly installed or
-changed non-managed hook may be skipped until it is reviewed and trusted again.
-Installation saves a recoverable `hooks.json.codex-5h.bak` before changing an
-existing hooks file. `codex-5h doctor` validates configuration and executable
-paths but intentionally says that trust must be confirmed inside Codex.
+Changing a definition changes its trust hash. Codex should ask you to review it
+again. `codex-5h doctor` validates configuration and executable paths, but only
+Codex `/hooks` can show the interactive trust decision.
 
-Initialize without importing history:
+## First use
+
+Start without reading old transcripts:
 
 ```bash
 "$HOME/.local/bin/codex-5h" setup --skip-import
@@ -49,54 +52,53 @@ Initialize without importing history:
 "$HOME/.local/bin/codex-5h" doctor
 ```
 
-History import is optional and consent-gated; use `setup --preview` first.
+An `unknown` result means that no recent compatible usage observation has been
+seen yet; it is not zero. A `stale` result means the last usable observation is
+too old. Submit a prompt after trusting the hooks or run `codex-5h refresh`.
 
-On Unix, startup creates or repairs the tracker state directory to `0700` and
-tracker-owned state files to `0600`. It does not chmod the selected parent
-directory. If `doctor` reports a permission-related I/O failure, verify that the
-current user owns the state directory, then rerun `doctor`; do not solve it by
-making the directory group- or world-readable. Windows permission bits are not
-claimed as protection, and Windows installation is unsupported in this beta.
+History import is optional. `setup --preview` reads only filenames and metadata.
+Only an explicitly confirmed import parses transcript content, and the tracker
+retains only allowlisted usage metadata and cursors.
 
 ## Backup and restore
 
-Create and integrity-check a backup with the helper included in the archive:
+Create an integrity-checked SQLite backup:
 
 ```bash
 PREFIX="$HOME/.local" scripts/backup-state.sh /safe/path/codex-usage-watch.sqlite3
 ```
 
-To restore, close Codex, remove only this tool's hooks, copy the verified backup
-over the `state.sqlite3` shown by `doctor` after removing its `-wal` and `-shm`
-sidecars, reinstall the hooks, repeat `/hooks` review if Codex requests it, and
-run `scripts/verify-install.sh`. Preserve the current database separately until
-the restored state passes verification.
+To restore, close Codex, uninstall the hooks, preserve the current database,
+remove its `-wal` and `-shm` sidecars, replace `state.sqlite3` with the verified
+backup, reinstall the hooks, repeat `/hooks` review if requested, and run
+`scripts/verify-install.sh`.
+
+On supported Unix systems the tracker directory is `0700`; its database,
+projection, reports, and backups are `0600`. Do not fix ownership trouble by
+making those files group- or world-readable.
 
 ## Upgrade, disable, and uninstall
 
-To upgrade, verify the new checksum, extract the new archive, retain the prior
-verified archive/binary for rollback, and rerun the new archive's installer and
-verifier. The SQLite state is migrated forward and retained. To roll back, run
-`codex-5h uninstall --confirm`, restore the prior verified `codex-5h` binary,
-run `codex-5h install --confirm`, repeat `/hooks` review when requested, and run
-the prior archive's `scripts/verify-install.sh`.
+For an upgrade, verify and extract the new archive, keep the prior verified
+archive for rollback, then rerun its installer and verifier.
 
-To temporarily disable the tracker, remove only its hooks:
+Temporarily remove only the hooks:
 
 ```bash
 "$HOME/.local/bin/codex-5h" uninstall --confirm
 ```
 
-To remove both hooks and the installed binary while preserving state:
+Remove the hooks and binary while preserving state:
 
 ```bash
 PREFIX="$HOME/.local" scripts/uninstall.sh --confirm
 ```
 
-Back up `state.sqlite3` before deleting the state directory shown by `doctor`.
-Unrelated hook handlers must remain untouched. Every script named in this guide
-is included in the standalone archive.
+Run that command from the extracted, checksum-verified archive. If the installed
+binary is missing, the bundled archive binary performs safe structural hook
+removal. If neither binary is available, the script does not edit `hooks.json`;
+it reports partial cleanup and tells you to verify and extract the matching
+archive. Unrelated hooks are never removed. Repeating uninstall is safe.
 
-The `.codex-plugin` source manifest and native Codex adapter are development
-previews, not public beta installation routes. No marketplace trust flow is
-claimed for this release.
+The `.codex-plugin` manifest and native Codex adapter are development previews,
+not beta installation routes.

@@ -297,7 +297,8 @@ pub fn discover_recent_transcripts(
             }
         };
 
-        for entry in entries.take(options.max_entries_per_day) {
+        let mut day_candidates = Vec::new();
+        for entry in entries {
             let entry = entry.map_err(|source| IngestError::TranscriptIo {
                 path: day_dir.clone(),
                 source,
@@ -310,13 +311,20 @@ pub fn discover_recent_transcripts(
                 .metadata()
                 .and_then(|metadata| metadata.modified())
                 .unwrap_or(SystemTime::UNIX_EPOCH);
-            candidates.push((modified, path));
+            day_candidates.push((modified, path));
         }
+        sort_transcript_candidates(&mut day_candidates);
+        day_candidates.truncate(options.max_entries_per_day);
+        candidates.extend(day_candidates);
     }
 
-    candidates.sort_by(|left, right| right.cmp(left));
+    sort_transcript_candidates(&mut candidates);
     candidates.truncate(options.max_files);
     Ok(candidates.into_iter().map(|(_, path)| path).collect())
+}
+
+fn sort_transcript_candidates(candidates: &mut [(SystemTime, PathBuf)]) {
+    candidates.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
 }
 
 enum ParsedRecord {

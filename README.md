@@ -1,385 +1,143 @@
 # Codex Usage Watch
 
-Codex Usage Watch is a local, non-blocking usage-awareness tool. It tracks how
-current Codex activity compares with the historical five-hour allowance and how
-many weekly percentage points the same local window consumed.
+> **Experimental beta candidate.** Tested on Ubuntu 25.10 x86_64 with the
+> checksummed standalone archive and Codex CLI 0.144.4.
+> Other Linux distributions may work, but they have not been verified. macOS is
+> preview-only, and Windows installation is unsupported.
 
-It never blocks a prompt, never treats an estimate as an official quota, and
-never stores prompt text, responses, tool arguments, or source code.
+Codex Usage Watch is a private, local pressure gauge for Codex usage. It turns
+the weekly percentage already recorded by Codex into an estimate of one
+historical five-hour allowance. It never blocks a prompt.
 
-**Current release state:** `0.1.0-beta.1` is still a Linux x86_64 beta candidate,
-not a published release. macOS is preview-only, Windows installation is
-unsupported, and the native Codex footer is a separate development preview.
+The number can be wrong. It is a local estimate, not official OpenAI quota,
+billing, or account data. Use it for awareness, not as proof of what you used or
+what you will be charged.
 
-Use it if you want a private local pressure gauge while the official five-hour
-number is unavailable. Do not use it as billing evidence or an official quota.
+You are welcome to try the experimental beta in the tested environment and
+report anything confusing or broken. Use a [bug report](https://github.com/snikmas/codex-usage-watch/issues/new?template=bug.yml),
+a [compatibility report](https://github.com/snikmas/codex-usage-watch/issues/new?template=compatibility.yml),
+or [private vulnerability reporting](https://github.com/snikmas/codex-usage-watch/security/advisories/new).
+Before sharing diagnostics, review them and never attach Codex transcripts,
+prompts, source code, `display.json`, `state.sqlite3`, or private local paths.
 
-Development-preview native footer (not included in the beta artifact):
+## What you will see
 
 ```text
-gpt-5.6-sol medium · ~/work/project · 5h est 32% · week +5.1%
+5 hour estimate: 32% | 5.1 weekly points
 ```
 
-Usage above 100% remains numeric and Codex continues normally.
+- `fresh` means a recent supported observation was found.
+- `stale` means the last observation is older than the freshness window.
+- `unknown` means there is not enough compatible data yet. It does not mean 0%.
+- Values above 100% remain visible and Codex continues normally.
 
-## What is included
+The optional native footer is a separate development preview and is not in the
+beta archive. The supported build does not add a permanent Codex status-line
+item: use `codex-5h status` for an always-available reading. Trusted lifecycle
+hooks show a session-start message and newly crossed warning thresholds; the
+`Stop` hook is intentionally silent.
 
-- deterministic five-hour accounting from weekly movement;
-- SQLite state with concurrent-writer and migration safety;
-- incremental transcript cursors with truncate/rotation detection;
-- versioned `display.json` for the optional thin Codex TUI adapter;
-- fail-open `SessionStart`, `UserPromptSubmit`, and `Stop` hooks;
-- real 300-minute and 10080-minute window detection in either rate-limit slot;
-- plan/model/tier/schema/version-partitioned calibration evidence;
-- movement-quality classification and a movement-weighted robust median;
-- explicit confidence states and stable calibration IDs stored on every window;
-- once-per-identity compatibility checks and `doctor --compat`;
-- consent-first historical setup/import;
-- reproducible install, verify, upgrade, backup, and rollback scripts.
+## Install the beta
 
-## Estimate priority and calibration safety
+There is no published beta artifact yet. Until the GitHub prerelease appears,
+the recommended public action is to wait; source installation is for
+contributors and is described separately below.
 
-The selected five-hour value follows this order:
+When `0.1.0-beta.1` is published, download its Ubuntu 25.10 x86_64 standalone
+archive and `SHA256SUMS` into a new empty directory. Then run:
 
-1. a fresh real server 300-minute window, when Codex provides one;
-2. an explicitly approved compatible personal profile;
-3. the bundled `15.8` baseline only for an identified Plus plan;
-4. otherwise unknown, while weekly cost can remain available.
+```bash
+sha256sum -c SHA256SUMS
+tar -xzf codex-usage-watch-0.1.0-beta.1-x86_64-unknown-linux-gnu.tar.gz
+cd codex-usage-watch-0.1.0-beta.1-x86_64-unknown-linux-gnu
+PREFIX="$HOME/.local" INSTALL_HOOKS=1 scripts/install.sh
+PREFIX="$HOME/.local" scripts/verify-install.sh
+```
 
-`15.8` is historical Plus-derived evidence. It is not presented as a validated
-default for Pro, Team, Enterprise, or an unknown plan.
+The target name in the archive filename is a build identifier, not a promise
+that every system using that target is compatible.
 
-Completed paired windows are classified by five-hour movement:
+After installation:
 
-| Movement | Quality | Calibration influence |
-|---:|---|---|
-| below 25 points | ignored | retained with an exclusion reason |
-| 25-49 | low | retained, excluded from estimator |
-| 50-79 | useful | weighted evidence |
-| 80-100 | high | weighted evidence |
+1. Start or restart Codex.
+2. Open `/hooks`.
+3. Review the `SessionStart`, `UserPromptSubmit`, and `Stop` definitions. Each
+   must call the expected absolute `codex-5h` path with a five-second timeout.
+4. Trust all three definitions and start a fresh Codex session.
+5. Run:
 
-The estimator uses a movement-weighted median. Five useful/high-quality samples
-create a reviewable candidate, not automatic validation. Replacement also needs
-approximately 10% persistent drift, acceptable spread, fresh compatible
-evidence, and confirmation in a later analysis. Nothing is auto-applied.
+```bash
+"$HOME/.local/bin/codex-5h" setup --skip-import
+"$HOME/.local/bin/codex-5h" status
+"$HOME/.local/bin/codex-5h" doctor
+```
 
-Confidence states are `baseline`, `personal_preliminary`, `personal_candidate`,
-`personal_validated`, `inherited_unvalidated`, and `unsupported`.
+History import is optional. `setup --preview` reads filenames and metadata only;
+transcript content is parsed only after explicit import consent.
 
-## Build and test
+For checksum details, backup/restore, upgrades, and recovery, use the complete
+[installation guide](docs/INSTALL.md).
 
-Requirements: a current stable Rust toolchain, Cargo, Bash, and Python 3 for the
-packaging smoke checks. Source builds support Rust 1.85 and newer.
+## Remove it
+
+From the extracted, checksum-verified archive directory:
+
+```bash
+PREFIX="$HOME/.local" scripts/uninstall.sh --confirm
+```
+
+This removes only Codex Usage Watch hooks and its installed binary. It preserves
+the local database. If the installed binary is already missing, the archive's
+bundled binary safely removes the hooks. Without either binary, the script stops
+with recovery steps instead of claiming that cleanup succeeded.
+
+## Privacy and help
+
+The tracker reads structured rate-limit metadata and timestamps. It does not
+retain prompts, responses, tool arguments, or source code. Its SQLite database
+and generated reports stay on this computer unless you choose to share a
+reviewed support bundle.
+
+```bash
+codex-5h doctor --json
+codex-5h doctor --support-bundle ./codex-usage-watch-support.json --confirm
+```
+
+Review any output before sharing it. See [privacy](docs/PRIVACY.md),
+[support](docs/SUPPORT.md), and [security reporting](SECURITY.md).
+
+## Source checkout for contributors
+
+Source builds require Rust 1.85 or newer, Cargo, Bash, Python 3, and the same
+Ubuntu 25.10 x86_64 environment for the currently verified installation path.
 
 ```bash
 make test
 make lint
-make build
-```
-
-## Safe first five minutes
-
-Typical states:
-
-```text
-fresh:    5 hour estimate: 32% | 5.1 weekly points
-stale:    stale estimate: 32% | last observation is too old
-unknown:  five-hour estimate unavailable | waiting for a supported observation
-high:     5 hour estimate: 114% | 18.0 weekly points | Codex continues
-```
-
-```text
-checksummed archive -> inspect docs -> install binary -> preview/skip import
-                    -> install hooks -> review and trust in /hooks -> status
-```
-
-1. Use the released-artifact instructions in [docs/INSTALL.md](docs/INSTALL.md),
-   or the clearly separated source-checkout path there while no release exists.
-2. Run `codex-5h setup --skip-import` to start without reading history.
-3. Run `codex-5h install --confirm`, then review and trust all three definitions
-   in Codex `/hooks` before opening a fresh session.
-4. Run `codex-5h status` and `codex-5h doctor`.
-
-Skipping import intentionally creates no historical evidence. The first useful
-reading appears after a trusted lifecycle hook or explicit `refresh` sees a
-supported rate-limit observation; until then, `unknown` is the honest result.
-
-## Install and first setup
-
-The supported beta distribution is the checksummed Linux x86_64 standalone
-archive plus explicit user hooks. Follow [docs/INSTALL.md](docs/INSTALL.md) for
-the released-artifact path. From a trusted source checkout, install the tracker
-without reading historical sessions with:
-
-```bash
 PREFIX="$HOME/.local" scripts/install.sh
 ```
 
-Expected result:
-
-```text
-Installed codex-5h tracker-0.1.0-beta.1 at /home/you/.local/bin/codex-5h
-Next: /home/you/.local/bin/codex-5h setup --preview
-```
-
-If that directory is not on your shell `PATH`, use the printed absolute path.
-Installed hooks also use this absolute executable path and do not depend on the
-Codex process inheriting your interactive shell environment.
-
-Preview what an optional import would inspect. This reads filenames and file
-metadata only; it does not open transcript contents or create tracker state:
+Source installation is not the recommended beta route. Contributors should run
+the full acceptance gate before proposing a release change:
 
 ```bash
-codex-5h setup --preview
+ALLOW_DIRTY=1 bash scripts/release-gate.sh
 ```
 
-Run interactive setup to see the same preview and choose whether to import:
+## Current limitations
 
-```bash
-codex-5h setup
-```
+- Only Ubuntu 25.10 x86_64 with the checksummed standalone archive and Codex CLI
+  0.144.4 has completed the claimed user lifecycle.
+- Other Linux distributions and architectures are unverified. macOS is a build
+  and shell-lifecycle preview; Windows has build/test coverage only.
+- The database has no retention or compaction policy yet and can grow over time.
+- Long-running multi-window dogfood and independent clean-machine feedback are
+  beta follow-up work, so this release must not be described as stable.
+- Release publication recovery, plugin-validator ownership, and automated
+  dependency security updates remain deferred before a stable release.
+- Plugin marketplace installation and the native Codex footer are not supported
+  beta routes.
 
-You can explicitly skip import and start from future observations:
-
-```bash
-codex-5h setup --skip-import
-```
-
-Only after consent does setup parse transcript content. The parser extracts
-timestamps, rate-limit windows, model, plan, service tier, schema shape, and
-Codex version. All other event content is ignored and not retained.
-
-Install the hooks explicitly:
-
-```bash
-codex-5h install --confirm
-```
-
-Installation alone never scans historical session files. Ordinary SessionStart
-also performs only cheap state/identity checks; live transcript cursors advance
-on lifecycle events that provide a transcript path.
-
-Hook configuration is not the same as hook trust. After installing or changing
-the hooks:
-
-1. Start or restart Codex.
-2. Open `/hooks`.
-3. Inspect the hook source and the exact `SessionStart`, `UserPromptSubmit`, and
-   `Stop` commands. Each must use the expected absolute `codex-5h` path and a
-   five-second timeout.
-4. Trust the reviewed definitions, then start a fresh Codex session.
-
-Codex records trust against the current hook definition. A new or changed
-non-managed hook receives a different hash and may be skipped until you review
-and trust it again. `codex-5h doctor` can prove that the configuration is
-well-formed and path-valid, but it deliberately reports that trust must be
-confirmed inside Codex.
-
-## Commands
-
-```text
-codex-5h setup [--preview|--skip-import|--import --confirm]
-codex-5h status
-codex-5h status --json
-codex-5h refresh [--transcript PATH]
-codex-5h history [--json]
-codex-5h analyze [--json]
-codex-5h reset --confirm
-codex-5h doctor
-codex-5h doctor --compat [--refresh-releases]
-codex-5h doctor --json
-codex-5h doctor --support-bundle FILE --confirm
-codex-5h calibration apply WEEKLY_POINTS --confirm
-codex-5h backup DESTINATION.sqlite3 --confirm
-codex-5h install --confirm
-codex-5h uninstall --confirm
-```
-
-`analyze` reports identity, calibration ID, confidence, sample quality, weighted
-median, quartiles/range, prediction error, evidence period, drift, and why a
-change is or is not recommended. SessionStart writes an initial report, a weekly
-report when due, and an early report after five new qualifying windows.
-
-Release metadata refresh is optional, uses the official GitHub release API, is
-cached for at least 24 hours, and treats returned prose only as data. It cannot
-execute instructions or modify calibration.
-
-`history` lists the 20 newest local windows and manual-control audit events.
-`reset --confirm` archives the current local window without deleting snapshots;
-the next structured observation starts a new window. `doctor` reports executable,
-state/schema, projection, session-directory, hook configuration/path, and basic
-compatibility checks independently before returning failure. It cannot prove the
-interactive Codex trust decision. `doctor --compat` provides the detailed
-compatibility report.
-
-`doctor --json` and the optional support bundle use the versioned
-`codex-usage-watch.doctor.v1` contract. They omit transcript paths, state paths,
-local account identifiers, raw observations, and databases.
-
-`status --json` is the stable `codex-usage-watch.status.v1` machine contract.
-`refresh` checks at most eight transcripts from the last two days, or exactly
-one file supplied with `--transcript`; it never performs an unbounded history
-scan. Run `codex-5h --help` for examples and exit-status documentation.
-
-## Supported settings
-
-Version 1 supports one user-facing attention setting:
-
-```bash
-export CODEX_USAGE_WATCH_THRESHOLDS="60,80,100"
-```
-
-Values are positive integer percentages, separated by commas. They are sorted
-and deduplicated. Invalid values make normal commands fail with exit status 2
-and hooks fail open. The default is `75,90,100`. Window duration, freshness,
-calibration selection, database paths, and super-usage increments are not
-user-tunable policy in version 1; `CODEX_USAGE_WATCH_HOME` only relocates state.
-
-## Try it safely in an isolated environment
-
-```bash
-TEMP="$(mktemp -d)"
-export PREFIX="$TEMP/prefix"
-export CODEX_HOME="$TEMP/codex-home"
-export CODEX_USAGE_WATCH_HOME="$TEMP/state"
-export PATH="$PREFIX/bin:$PATH"
-
-scripts/install.sh
-codex-5h setup --skip-import
-codex-5h install --confirm
-codex-5h status
-codex-5h history
-codex-5h analyze
-codex-5h doctor
-codex-5h doctor --compat
-codex-5h backup "$TEMP/usage-watch-backup.sqlite3" --confirm
-codex-5h uninstall --confirm
-```
-
-Or run the complete automated lifecycle:
-
-```bash
-bash scripts/smoke-install.sh
-```
-
-## State, backup, upgrade, and rollback
-
-Set `CODEX_USAGE_WATCH_HOME` to choose an explicit state directory. Otherwise
-the platform-specific per-user application-data location is used. The important
-files are:
-
-- `state.sqlite3`: authoritative state and calibration history;
-- `display.json`: replaceable TUI projection;
-- `calibration-report.json`: latest scheduled analysis report;
-- `release-metadata.json`: optional cached official release metadata.
-
-Create a SQLite-consistent, integrity-checked backup:
-
-```bash
-scripts/backup-state.sh /safe/path/codex-usage-watch.sqlite3
-```
-
-For restore, first close Codex sessions and uninstall the hooks, back up the
-current database, then replace `state.sqlite3` with the chosen backup. The next
-tracker start runs forward-only migrations and regenerates projections. A newer
-unknown database schema is rejected without mutation.
-
-Upgrade by rerunning `scripts/install.sh`, followed by
-`scripts/verify-install.sh`. Roll back hooks and the binary with:
-
-```bash
-scripts/uninstall.sh --confirm
-```
-
-Uninstall preserves tracker state. Unrelated hooks are preserved during both
-installation and removal.
-
-## Troubleshooting and recovery
-
-- Missing data: run `codex-5h refresh`, then `codex-5h doctor`. A new install
-  remains unknown until a structured live event or consented import exists.
-- Stale projection: run `codex-5h refresh --transcript PATH`. Stale means no
-  recent supported observation; it is never converted to zero.
-- Command not found: invoke the absolute path printed by `scripts/install.sh`
-  or add `$HOME/.local/bin` (or your chosen `PREFIX/bin`) to `PATH`.
-- Missing, malformed, or moved hooks: rerun the installed binary's
-  `install --confirm`, then repeat the `/hooks` review/trust flow and run `doctor`.
-  Doctor requires all three well-formed handlers to point at the equivalent
-  canonical executable path but does not claim they are trusted.
-- Unsupported schema: run `codex-5h doctor --compat`. Tracking remains
-  non-blocking and the estimate becomes unknown instead of guessing.
-- Damaged hook configuration: stop Codex and restore
-  `$CODEX_HOME/hooks.json.codex-5h.bak`, which is written before every changed
-  hook file replacement.
-- Restore a database: stop Codex, uninstall hooks, back up the current database,
-  replace `state.sqlite3` with the chosen integrity-checked backup, reinstall
-  hooks, and run `doctor`.
-- Complete rollback: run `scripts/uninstall.sh --confirm`; after optionally
-  backing up, remove the directory printed as `State directory` by `doctor`.
-  The script intentionally does not delete state automatically.
-
-For the exact local data flow and limits, read [docs/PRIVACY.md](docs/PRIVACY.md).
-Security reports should follow [SECURITY.md](SECURITY.md).
-
-## Platform and support policy
-
-Linux x86_64 is the only supported standalone beta artifact. macOS is a
-build/test preview pending a real user lifecycle run, and Windows is build-only
-with no supported native installer. Plugin marketplace installation is not a
-beta route. See the authoritative [support matrix](docs/SUPPORT.md),
-[contribution guide](CONTRIBUTING.md), and [release policy](docs/RELEASE.md).
-
-Public project links:
-
-- [installation guide](https://github.com/snikmas/codex-usage-watch/blob/main/docs/INSTALL.md)
-- [release artifacts](https://github.com/snikmas/codex-usage-watch/releases)
-- [issues and support requests](https://github.com/snikmas/codex-usage-watch/issues)
-- [private security advisories](https://github.com/snikmas/codex-usage-watch/security/advisories/new)
-- [support matrix](https://github.com/snikmas/codex-usage-watch/blob/main/docs/SUPPORT.md)
-
-## Optional native Codex fork
-
-Most users need only the executable and lifecycle hooks. The native footer is a
-development preview and is not distributed by this repository's public beta.
-
-`scripts/build-codex-fork.sh` requires an explicit checkout, exact Git ref,
-release suffix, and output directory. It refuses to change the checkout, runs
-focused TUI tests, builds the binary, names it with the suffix, and writes build
-identity plus SHA-256 evidence. Tracker and fork release identifiers remain
-independent.
-
-Create standalone versioned tracker artifacts plus `SHA256SUMS` with:
-
-```bash
-make release
-```
-
-Before a native adapter can be distributed, a maintainer must publish its source
-or a versioned patch, rebase it onto the chosen upstream ref, and rerun the
-focused Codex TUI suite. This repository does not silently mutate or rebase
-another repository.
-
-## Current limitations and remaining real-world work
-
-- The deterministic implementation and fixtures are complete, but several
-  elapsed real five-hour windows still need observation-mode usability study
-  before threshold/presentation tuning.
-- The native Codex footer adapter is not included in the public repository or
-  release artifacts. The standalone CLI and hooks are the supported beta path.
-- The richer native `/usage` section remains later work; the existing optional
-  adapter covers the footer and `/status`.
-- Optional remote release checks require `curl`; all normal tracking works
-  offline and does not need network access.
-- Linux is locally lifecycle-tested. macOS has hosted Rust and shell-lifecycle
-  gates but still needs a real user acceptance run. Windows has build/test CI
-  only and no supported installation path.
-- A clean-machine external tester using only the public instructions and exact
-  release candidate artifact is still required before the beta may be tagged
-  or recommended publicly.
-
-## Project status
-
-This repository is an experimental beta candidate. It must not be tagged or
-recommended publicly until the external acceptance gate in
-[docs/RELEASE.md](docs/RELEASE.md) is complete. See
-[CHANGELOG.md](./CHANGELOG.md) for candidate behavior and the limitations above.
+Technical details live in [the support matrix](docs/SUPPORT.md),
+[release policy](docs/RELEASE.md), [privacy model](docs/PRIVACY.md), and the
+historical implementation notes under `notes/`.

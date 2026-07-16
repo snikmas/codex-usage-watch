@@ -153,3 +153,68 @@ downloaded published-artifact verification remain intentionally unrecorded.
 This public CI evidence still does not satisfy real hook trust, naturally elapsed
 dogfood, independent clean-machine acceptance, or published-artifact verification.
 The beta remains untagged and must not be publicly recommended yet.
+
+## Stage 13 beta-readiness evidence (2026-07-16)
+
+- Public scope is narrowed to the environment actually exercised here: Ubuntu
+  25.10 x86_64, the checksummed standalone archive, and Codex CLI 0.144.4.
+  macOS remains preview-only, Windows installation remains unsupported, and a
+  Rust target filename is not presented as a compatibility promise.
+- GitHub private vulnerability reporting is enabled through the repository API.
+  The public Security page, viewed signed out, exposes `Report a vulnerability`,
+  and its advisory URL redirects to sign in with the correct private-report
+  return URL instead of falling back to a public issue.
+- POSIX-quoted generated hook commands executed paths containing spaces, single
+  and double quotes, dollar signs, backticks, backslashes, and command-
+  substitution text without expansion. A non-UTF-8 executable path was rejected
+  before `hooks.json` was written.
+- Transcript discovery sorts every candidate by modification time and stable
+  path tie-break before applying the 256-entry daily bound. A 301-file regression
+  repeatedly selected the newest usable transcript.
+- Uninstall tests cover installed binary present, installed binary missing with
+  and without owned hooks, verified archive-binary recovery, unrelated hooks,
+  repeated removal, and prefixes/Codex homes containing spaces. Incomplete
+  cleanup exits 5 without editing the hook file or claiming success.
+- Real local state exposed a release-blocking accounting bug: concurrent Codex
+  processes reported the same weekly reset deadline one second apart, and replay
+  counted each change as a full reset. Regression tests now tolerate bounded
+  timestamp jitter, ignore older reset epochs, and mark ignored snapshots as not
+  affecting the meter. Replaying a copy of the real state reduced the current
+  window from the impossible `+290.0` points to the actual monotonic movement.
+- The installed candidate produced valid JSON for direct `SessionStart`,
+  `UserPromptSubmit`, and `Stop` executions. The real transcript cursor advanced
+  from 922885 to 955327 and regenerated a fresh projection without copying
+  transcript content into the repository. The live CLI then reported `+44.0`
+  weekly points after newer observations arrived.
+- In isolated Codex, `/hooks` reported exactly one installed and active
+  `SessionStart`, `UserPromptSubmit`, and `Stop` handler, each pointing at the
+  installed candidate with the expected event argument and five-second timeout.
+  A content-free process-execution trace of a real turn recorded one successful
+  execution of each exact candidate hook command. Editing one definition caused
+  Codex to report one new or changed hook; restoring the candidate definitions
+  returned all three to active status under the previously reviewed hash.
+- With an exclusive real database lock, the installed pre-final candidate still
+  failed open with JSON and a stderr diagnostic but took about 2.1 seconds. The
+  final source gives hooks a separate 250 ms SQLite lock budget; its regression
+  completes in about 0.27 seconds while normal CLI commands retain the longer
+  retry budget. After installing that fix, a real prompt returned
+  `LIVE-LOCK-OK` in about three seconds while the separate exclusive lock was
+  still held.
+- The full dirty-candidate release gate passed source tests, strict clippy,
+  formatting, documentation/plugin validation, source and exact-archive
+  lifecycle, adversarial paths, checksums, provenance/SBOM, backup/restore/
+  upgrade/rollback/uninstall, archive/crate privacy scans, and contamination
+  rejection. The generated checksum is provisional until the final clean commit
+  is frozen.
+
+Still open before recommending the beta:
+
+- obtain green public CI for the final commit; and
+- after publication, download the published archive and checksum, verify,
+  install, exercise, and uninstall that exact artifact.
+
+Naturally elapsed multi-window dogfood and independent clean-machine feedback
+are Stage 13 beta follow-up, not first-beta tag blockers. Broader portability,
+database retention/compaction, retry-safe publication, plugin-validator
+ownership, and automated dependency security updates remain explicit deferred
+work before a stable or broader recommendation.
