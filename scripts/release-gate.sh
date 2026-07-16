@@ -13,6 +13,8 @@ bash scripts/check-versions.sh
 cargo fmt --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked --all-targets
+bash scripts/check-docs.sh
+bash scripts/check-plugin.sh
 bash scripts/smoke-install.sh
 bash scripts/package-release.sh
 
@@ -22,6 +24,8 @@ TARGET="${CARGO_BUILD_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
 ARCHIVE="target/release-dist/codex-usage-watch-$VERSION-$TARGET.tar.gz"
 test -f "$ARCHIVE"
 bash scripts/verify-artifact-behavior.sh "$ARCHIVE"
+CRATE="target/release-dist/codex-usage-watch-$VERSION.crate"
+bash scripts/test-privacy-scan.sh
 
 # Reproduce the public INSTALL.md path from a blank directory. From this point
 # through uninstall, every executable and helper comes from the release archive.
@@ -91,11 +95,5 @@ encoded = json.dumps(json.load(open(sys.argv[1], encoding="utf-8")))
 assert "unrelated-hook" in encoded
 assert "codex-5h hook" not in encoded
 PY
-
-if find target/release-dist -type f -print0 | xargs -0 grep -aE -n \
-  '/home/snikmas|notes/agent|\.agent/|rollout-[0-9]|transcript_id' >/dev/null; then
-  echo "release artifact privacy scan found a forbidden local/private marker" >&2
-  exit 2
-fi
 
 echo "Local exact-artifact release gate: PASS"

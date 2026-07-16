@@ -1,5 +1,4 @@
-use std::fs;
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -8,12 +7,15 @@ use chrono::{DateTime, Utc};
 use directories::ProjectDirs;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
-use tempfile::NamedTempFile;
 use thiserror::Error;
 
 use crate::calibration::CalibrationConfidence;
 use crate::ingest::{IngestBatch, IngestError};
 use crate::model::{DomainError, TrackerConfig, WeeklySnapshot, WindowStatus};
+use crate::private_fs::{
+    ensure_private_directory, ensure_private_file, ensure_private_file_if_exists,
+    write_private_atomic,
+};
 
 mod backups;
 mod calibration_state;
@@ -184,11 +186,16 @@ impl StateStore {
     }
 
     fn open_at(paths: StatePaths, config: TrackerConfig) -> Result<Self, StateError> {
-        fs::create_dir_all(&paths.directory).map_err(|source| StateError::Io {
+        ensure_private_directory(&paths.directory).map_err(|source| StateError::Io {
             path: paths.directory.clone(),
             source,
         })?;
+        repair_tracker_permissions(&paths)?;
         let mut connection = Connection::open(&paths.database)?;
+        ensure_private_file(&paths.database).map_err(|source| StateError::Io {
+            path: paths.database.clone(),
+            source,
+        })?;
         connection.busy_timeout(BUSY_TIMEOUT)?;
         retry_busy(|| {
             connection
@@ -198,6 +205,7 @@ impl StateStore {
         connection.pragma_update(None, "foreign_keys", "ON")?;
         retry_busy(|| migrations::migrate(&mut connection))?;
         retry_busy(|| migrations::write_config_metadata(&connection, &config))?;
+        repair_tracker_permissions(&paths)?;
         let persisted_calibration: f64 = connection.query_row(
             "SELECT calibration_weekly_points FROM config_metadata WHERE singleton = 1",
             [],
@@ -399,26 +407,30 @@ fn write_json_atomic<T: Serialize>(
     value: &T,
 ) -> Result<(), StateError> {
     let bytes = serde_json::to_vec_pretty(value)?;
-    let mut temporary = NamedTempFile::new_in(directory).map_err(|source| StateError::Io {
+    let mut encoded = bytes;
+    encoded.push(b'\n');
+    write_private_atomic(directory, destination, &encoded).map_err(|source| StateError::Io {
         path: destination.to_path_buf(),
         source,
-    })?;
-    temporary
-        .write_all(&bytes)
-        .and_then(|()| temporary.write_all(b"\n"))
-        .and_then(|()| temporary.as_file().sync_all())
-        .map_err(|source| StateError::Io {
-            path: destination.to_path_buf(),
+    })
+}
+
+fn repair_tracker_permissions(paths: &StatePaths) -> Result<(), StateError> {
+    let database_wal = paths.directory.join("state.sqlite3-wal");
+    let database_shm = paths.directory.join("state.sqlite3-shm");
+    let release_metadata = paths.directory.join("release-metadata.json");
+    for path in [
+        &paths.database,
+        &database_wal,
+        &database_shm,
+        &paths.display,
+        &paths.calibration_report,
+        &release_metadata,
+    ] {
+        ensure_private_file_if_exists(path).map_err(|source| StateError::Io {
+            path: path.to_path_buf(),
             source,
         })?;
-    temporary
-        .persist(destination)
-        .map_err(|error| StateError::Io {
-            path: destination.to_path_buf(),
-            source: error.error,
-        })?;
-    if let Ok(directory_file) = fs::File::open(directory) {
-        let _ = directory_file.sync_all();
     }
     Ok(())
 }

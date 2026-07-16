@@ -10,6 +10,7 @@ pub mod hooks;
 pub mod ingest;
 pub mod model;
 pub mod persistence;
+pub mod private_fs;
 pub mod setup;
 
 pub use calculate::{AccountingEngine, ApplyOutcome, round_five_hour_percent, round_weekly_points};
@@ -22,8 +23,8 @@ pub use compatibility::{
     cached_release_metadata,
 };
 pub use ingest::{
-    DiscoveryOptions, HookInput, IngestBatch, IngestOptions, TranscriptCursor,
-    discover_recent_transcripts, ingest_hook_transcript, ingest_transcript,
+    DiscoveryOptions, HookInput, IngestBatch, IngestOptions, MAX_JSONL_RECORD_BYTES,
+    TranscriptCursor, discover_recent_transcripts, ingest_hook_transcript, ingest_transcript,
 };
 pub use model::{
     DomainError, FIVE_HOUR_WINDOW_MINUTES, IngestDiagnostic, LocalWindow, MeterReading,

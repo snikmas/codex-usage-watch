@@ -11,6 +11,9 @@ use codex_usage_watch::{
 };
 use tempfile::TempDir;
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn dt(value: &str) -> DateTime<Utc> {
@@ -240,6 +243,15 @@ fn release_metadata_is_allowlisted_and_cached_for_a_day() {
     unsafe { std::env::remove_var("CODEX_USAGE_WATCH_RELEASE_METADATA_FILE") };
     assert_eq!(first, cached);
     assert!(!marker.exists());
+    #[cfg(unix)]
+    {
+        let mode = fs::metadata(temp.path().join("release-metadata.json"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600);
+    }
 }
 
 #[test]

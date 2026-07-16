@@ -41,3 +41,20 @@ or when the tracker is unavailable.
 Users can inspect or disable hooks in `$CODEX_HOME/hooks.json`, remove this
 tool's entries with `codex-5h uninstall --confirm`, choose state location with
 `CODEX_USAGE_WATCH_HOME`, and delete state after making any desired backup.
+
+## Local file permissions
+
+On Unix, the tracker-owned state directory is created and repaired to `0700`.
+The SQLite database and its WAL/SHM sidecars, `display.json`, calibration and
+release reports, and tracker-created backups are `0600`. Startup repairs older
+permissive tracker-owned files without deleting or rewriting their contents and
+does not change the mode of the user-selected parent directory.
+
+These mode bits are a Unix control only. Windows does not use this guarantee;
+Windows installation remains unsupported for this beta. A process running as
+the same user can still read or change tracker state.
+
+`doctor --json` and `doctor --support-bundle FILE --confirm` exclude transcript
+paths, local state paths, account names, raw observations, prompts, responses,
+source code, and databases. Review any diagnostic file before attaching it to
+an issue, as you would any locally generated file.

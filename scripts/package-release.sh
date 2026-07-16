@@ -6,6 +6,8 @@ VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$ROOT/Cargo.toml" | head -n 1
 TARGET="${CARGO_BUILD_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
 DIST="${DIST_DIR:-$ROOT/target/release-dist}"
 NAME="codex-usage-watch-$VERSION-$TARGET"
+BUILD_HOME="$(python3 -c 'import pathlib; print(pathlib.Path.home())')"
+export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$ROOT=/src/codex-usage-watch --remap-path-prefix=$BUILD_HOME=/build-home"
 
 cargo build --manifest-path "$ROOT/Cargo.toml" --release --locked
 cargo package --manifest-path "$ROOT/Cargo.toml" --locked --allow-dirty

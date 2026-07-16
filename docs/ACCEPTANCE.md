@@ -100,3 +100,35 @@ This evidence does not complete the release gate. Still required:
 
 Until all four exist, the candidate must not be tagged or recommended publicly.
 macOS remains preview-only until it receives a separate real user lifecycle run.
+
+## Stage 12 local hardening evidence (2026-07-16)
+
+- Under `umask 022`, Linux lifecycle verification observed `0700` on the tracker
+  state directory and `0600` on SQLite state, projection, and backup files.
+  Unit coverage also repairs permissive database/report/cache modes while keeping
+  the user-selected parent unchanged and preserving the existing database.
+- The release privacy gate extracts both the standalone archive and Cargo crate,
+  scans paths and contents, permits JSONL only for named synthetic fixtures,
+  rejects databases/private markers/unexpected paths, and compares the archive
+  against its exact documented manifest. A deliberately contaminated archive is
+  rejected; the clean local candidate passes. Build path remapping removes the
+  developer home path from the release binary.
+- `codex-usage-watch.doctor.v1` JSON and the optional `0600` support bundle expose
+  only version, OS/architecture, schema/projection state, hook-path validity,
+  compatibility state, and stable issue codes. Tests reject transcript/state
+  paths and sensitive field names from both outputs.
+- Transcript ingestion retains bounded discovery and now caps each JSONL record
+  at 1 MiB. Oversized input emits only a fixed diagnostic, later valid records
+  remain readable, unusual Unix path bytes are accepted, and replacement/truncate
+  behavior remains deterministic. A separate cargo-fuzz target covers arbitrary
+  transcript bytes without adding real transcripts as seeds.
+- The dirty-tree implementation gate passed formatting, strict clippy, 68
+  automated tests (one manual live test ignored), source/package lifecycle,
+  exact-artifact behavior, extracted privacy/manifest/contamination checks,
+  packaged docs, checksums, provenance, backup/restore/upgrade/rollback/uninstall,
+  and Unix permission assertions.
+
+This is local implementation evidence, not release evidence. The final candidate
+SHA/checksum, green public CI, real Codex trust, naturally elapsed dogfood,
+independent clean-machine acceptance, branch protection enforcement, tag, and
+downloaded published-artifact verification remain intentionally unrecorded.

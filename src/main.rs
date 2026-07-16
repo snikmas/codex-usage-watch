@@ -12,6 +12,7 @@ use codex_usage_watch::{
     TrackerConfig, WindowStatus, cached_release_metadata, discover_recent_transcripts,
     import_history, preview_history,
 };
+use serde::Serialize;
 
 const FAIL_OPEN_JSON: &str = r#"{"continue":true,"suppressOutput":true}"#;
 
@@ -136,6 +137,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         [command] if command == "analyze" => print_analysis(false)?,
         [command, flag] if command == "analyze" && flag == "--json" => print_analysis(true)?,
         [command] if command == "doctor" => print_doctor()?,
+        [command, flag] if command == "doctor" && flag == "--json" => print_doctor_json()?,
         [command, flag] if command == "doctor" && flag == "--compat" => {
             print_compatibility_doctor(false)?
         }
@@ -143,6 +145,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             if command == "doctor" && flag == "--compat" && release == "--refresh-releases" =>
         {
             print_compatibility_doctor(true)?
+        }
+        [command, flag, destination, confirm]
+            if command == "doctor" && flag == "--support-bundle" && confirm == "--confirm" =>
+        {
+            write_support_bundle(std::path::Path::new(destination))?
         }
         [command, action, value, flag]
             if command == "calibration" && action == "apply" && flag == "--confirm" =>
@@ -180,7 +187,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn print_help() {
     println!(
-        "Codex Usage Watch {}\n\nLocal, non-blocking five-hour usage awareness. Estimates are not official quota or billing data.\n\nUSAGE:\n  codex-5h <COMMAND> [OPTIONS]\n\nCOMMANDS:\n  setup [--preview|--skip-import|--import --confirm]  Consent-first history setup\n  status [--json]                                    Show the current projection\n  refresh [--transcript PATH]                        Bounded refresh (at most 8 recent files)\n  history [--json]                                   Show recent windows and control events\n  analyze [--json]                                   Inspect calibration evidence\n  reset --confirm                                    Archive the current local window\n  doctor [--compat [--refresh-releases]]             Validate installation and compatibility\n  calibration apply POINTS --confirm                 Apply reviewed calibration to future windows\n  backup DESTINATION.sqlite3 --confirm               Create an integrity-checked database backup\n  install --confirm | uninstall --confirm            Add or remove only this tool's hooks\n\nOPTIONS:\n  -h, --help       Print help and exit 0\n  -V, --version    Print version and exit 0\n\nEXAMPLES:\n  codex-5h setup --preview\n  codex-5h status --json\n  codex-5h refresh\n  codex-5h doctor\n\nEXIT STATUS:\n  0 success\n  2 invalid command or arguments\n  3 invalid configuration\n  4 required data is unavailable\n  5 runtime or I/O failure",
+        "Codex Usage Watch {}\n\nLocal, non-blocking five-hour usage awareness. Estimates are not official quota or billing data.\n\nUSAGE:\n  codex-5h <COMMAND> [OPTIONS]\n\nCOMMANDS:\n  setup [--preview|--skip-import|--import --confirm]  Consent-first history setup\n  status [--json]                                    Show the current projection\n  refresh [--transcript PATH]                        Bounded refresh (at most 8 recent files)\n  history [--json]                                   Show recent windows and control events\n  analyze [--json]                                   Inspect calibration evidence\n  reset --confirm                                    Archive the current local window\n  doctor [--json|--compat [--refresh-releases]]      Validate installation and compatibility\n  doctor --support-bundle FILE --confirm             Write privacy-sanitized diagnostics\n  calibration apply POINTS --confirm                 Apply reviewed calibration to future windows\n  backup DESTINATION.sqlite3 --confirm               Create an integrity-checked database backup\n  install --confirm | uninstall --confirm            Add or remove only this tool's hooks\n\nOPTIONS:\n  -h, --help       Print help and exit 0\n  -V, --version    Print version and exit 0\n\nEXAMPLES:\n  codex-5h setup --preview\n  codex-5h status --json\n  codex-5h refresh\n  codex-5h doctor --json\n\nEXIT STATUS:\n  0 success\n  2 invalid command or arguments\n  3 invalid configuration\n  4 required data is unavailable\n  5 runtime or I/O failure",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -212,8 +219,8 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "Archive the current local window and record the control action.",
         ),
         "doctor" => (
-            "codex-5h doctor [--compat [--refresh-releases]]",
-            "Report installation checks independently; detailed compatibility is optional.",
+            "codex-5h doctor [--json|--compat [--refresh-releases]|--support-bundle FILE --confirm]",
+            "Report installation checks; JSON and support bundles omit local paths and identifiers.",
         ),
         "calibration" => (
             "codex-5h calibration apply WEEKLY_POINTS --confirm",
@@ -538,6 +545,118 @@ fn print_compatibility_doctor(refresh_releases: bool) -> Result<(), Box<dyn std:
     }
     println!("Result              {:?}", check.result);
     println!("Requests continue   yes");
+    Ok(())
+}
+
+#[derive(Debug, Serialize)]
+struct DoctorReportV1 {
+    contract: &'static str,
+    tracker_version: &'static str,
+    operating_system: &'static str,
+    architecture: &'static str,
+    healthy: bool,
+    state: DoctorStateV1,
+    hooks: DoctorHooksV1,
+    compatibility: Option<String>,
+    requests_continue: bool,
+    issue_codes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct DoctorStateV1 {
+    available: bool,
+    schema_version: Option<i64>,
+    projection_state: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct DoctorHooksV1 {
+    configured_and_path_valid: bool,
+    trust: &'static str,
+}
+
+fn collect_doctor_report() -> DoctorReportV1 {
+    let mut issue_codes = Vec::new();
+    let mut state = DoctorStateV1 {
+        available: false,
+        schema_version: None,
+        projection_state: None,
+    };
+    let mut compatibility = None;
+
+    let opened = TrackerConfig::from_env()
+        .map_err(|_| ())
+        .and_then(|config| StateStore::open(config).map_err(|_| ()));
+    match opened {
+        Ok(mut store) => {
+            state.available = true;
+            match store.schema_version() {
+                Ok(schema) => state.schema_version = Some(schema),
+                Err(_) => issue_codes.push("database_schema_unavailable"),
+            }
+            match store.load_or_recover_display(Utc::now()) {
+                Ok(display) => {
+                    state.projection_state = Some(format!("{:?}", display.status).to_lowercase())
+                }
+                Err(_) => issue_codes.push("display_projection_unavailable"),
+            }
+            match store
+                .current_compatibility_identity(Some(&detect_codex_version()), None, None)
+                .and_then(|(identity, supported)| {
+                    store.check_compatibility(identity, supported, Utc::now())
+                }) {
+                Ok(check) => compatibility = Some(format!("{:?}", check.result).to_lowercase()),
+                Err(_) => issue_codes.push("compatibility_unavailable"),
+            }
+        }
+        Err(_) => issue_codes.push("state_unavailable"),
+    }
+
+    let hooks_valid = std::env::current_exe()
+        .ok()
+        .is_some_and(|executable| validate_installed_hooks(&executable).is_ok());
+    if !hooks_valid {
+        issue_codes.push("hooks_missing_or_path_invalid");
+    }
+    let healthy = issue_codes.is_empty();
+    DoctorReportV1 {
+        contract: "codex-usage-watch.doctor.v1",
+        tracker_version: env!("CARGO_PKG_VERSION"),
+        operating_system: std::env::consts::OS,
+        architecture: std::env::consts::ARCH,
+        healthy,
+        state,
+        hooks: DoctorHooksV1 {
+            configured_and_path_valid: hooks_valid,
+            trust: "must_be_confirmed_inside_codex",
+        },
+        compatibility,
+        requests_continue: true,
+        issue_codes,
+    }
+}
+
+fn print_doctor_json() -> Result<(), Box<dyn std::error::Error>> {
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&collect_doctor_report())?
+    );
+    Ok(())
+}
+
+fn write_support_bundle(destination: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    let parent = destination
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."));
+    std::fs::create_dir_all(parent)?;
+    let mut encoded = serde_json::to_vec_pretty(&collect_doctor_report())?;
+    encoded.push(b'\n');
+    codex_usage_watch::private_fs::write_private_atomic(parent, destination, &encoded)?;
+    println!(
+        "Created privacy-sanitized support bundle at {}",
+        destination.display()
+    );
     Ok(())
 }
 

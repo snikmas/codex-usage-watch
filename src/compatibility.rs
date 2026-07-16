@@ -7,6 +7,8 @@ use chrono::{DateTime, TimeDelta, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::private_fs::{ensure_private_directory, write_private_atomic};
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompatibilityIdentity {
     pub codex_version: String,
@@ -150,15 +152,18 @@ pub fn cached_release_metadata(
         tag_name: tag_name.to_string(),
         html_url: html_url.to_string(),
     };
-    fs::create_dir_all(state_directory).map_err(|source| ReleaseMetadataError::Io {
+    ensure_private_directory(state_directory).map_err(|source| ReleaseMetadataError::Io {
         path: state_directory.to_path_buf(),
         source,
     })?;
-    let encoded = serde_json::to_vec_pretty(&metadata)
+    let mut encoded = serde_json::to_vec_pretty(&metadata)
         .map_err(|error| ReleaseMetadataError::Invalid(error.to_string()))?;
-    fs::write(&cache_path, encoded).map_err(|source| ReleaseMetadataError::Io {
-        path: cache_path,
-        source,
+    encoded.push(b'\n');
+    write_private_atomic(state_directory, &cache_path, &encoded).map_err(|source| {
+        ReleaseMetadataError::Io {
+            path: cache_path,
+            source,
+        }
     })?;
     Ok(Some(metadata))
 }

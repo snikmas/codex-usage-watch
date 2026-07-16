@@ -15,3 +15,17 @@ The minimum supported Rust version for source builds is 1.85. CI tests that
 MSRV separately from the current stable toolchain. Platform status may only be
 promoted after its named acceptance evidence exists; a green cross-platform
 compile alone does not establish installation support.
+
+## Privacy-sanitized diagnostics
+
+Run `codex-5h doctor --json` for the versioned diagnostic contract. To create a
+private `0600` file that can be reviewed before sharing, run:
+
+```bash
+codex-5h doctor --support-bundle ./codex-usage-watch-support.json --confirm
+```
+
+The bundle contains only tracker version, OS/architecture, schema and projection
+state, hook-path validity, compatibility state, and stable issue codes. It never
+contains transcript/state paths, raw records, prompts, responses, source code,
+or the SQLite database.
