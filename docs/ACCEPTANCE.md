@@ -150,9 +150,10 @@ downloaded published-artifact verification remain intentionally unrecorded.
   force pushes and deletion. Secret scanning and push protection are enabled.
   PR #4 was correctly blocked while checks were failing or pending.
 
-This public CI evidence still does not satisfy real hook trust, naturally elapsed
-dogfood, independent clean-machine acceptance, or published-artifact verification.
-The beta remains untagged and must not be publicly recommended yet.
+At the Stage 12 checkpoint, this public CI evidence did not yet satisfy real hook
+trust, naturally elapsed dogfood, independent clean-machine acceptance, or
+published-artifact verification. The later Stage 13 evidence below records which
+items became first-beta gates and which became explicit beta follow-up.
 
 ## Stage 13 beta-readiness evidence (2026-07-16)
 
@@ -204,17 +205,33 @@ The beta remains untagged and must not be publicly recommended yet.
   formatting, documentation/plugin validation, source and exact-archive
   lifecycle, adversarial paths, checksums, provenance/SBOM, backup/restore/
   upgrade/rollback/uninstall, archive/crate privacy scans, and contamination
-  rejection. The generated checksum is provisional until the final clean commit
-  is frozen.
+  rejection. That candidate checksum was provisional; the frozen published
+  checksum is recorded below.
 
-Still open before recommending the beta:
+Final release evidence:
 
-- obtain green public CI for the final commit; and
-- after publication, download the published archive and checksum, verify,
-  install, exercise, and uninstall that exact artifact.
+- PR #5 merged the reviewed candidate as commit
+  `b91dbfd2d2314c9b1d2f8b2b41e4a3d0d020f1d4`. Public CI run
+  `29466739307` passed all nine jobs on that exact merge commit, including the
+  Linux exact-artifact/privacy gate and Linux/macOS standalone lifecycles.
+- Annotated tag `v0.1.0-beta.1` points to that merge commit. Beta release run
+  `29466883962` passed its tag and release gates and published the archive,
+  crate, SBOM-bearing package, and `SHA256SUMS` as a GitHub prerelease.
+- The published archive was downloaded into a new isolated directory. Its
+  SHA-256 was
+  `2b5da08d0c1046f5830ab978fe8e85d592a05bbe4af38f360185a78984391723`,
+  and `sha256sum -c SHA256SUMS` passed.
+- Following only the packaged public workflow, the downloaded binary installed
+  into an isolated prefix, wrote the three absolute hook definitions, completed
+  `setup --skip-import`, processed a content-free `SessionStart` payload,
+  passed packaged install verification and `doctor --json`, and returned the
+  documented unknown local estimate. The packaged uninstaller then removed the
+  binary and owned hooks while preserving the private state database.
+- No unresolved P0 or P1 finding remains. The release is recommended only as an
+  experimental beta for the explicitly tested environment.
 
 Naturally elapsed multi-window dogfood and independent clean-machine feedback
-are Stage 13 beta follow-up, not first-beta tag blockers. Broader portability,
+are beta follow-up, not first-beta tag blockers. Broader portability,
 database retention/compaction, retry-safe publication, plugin-validator
 ownership, and automated dependency security updates remain explicit deferred
 work before a stable or broader recommendation.
