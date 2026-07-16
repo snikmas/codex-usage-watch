@@ -144,4 +144,7 @@ historical implementation notes under `notes/`.
 
 ## Some Screenshots:
 <img width="624" height="200" alt="Screenshot From 2026-07-16 10-53-57" src="https://github.com/user-attachments/assets/43efedcf-ef89-427a-b73c-3f584f72f5fa" />
+<img width="781" height="523" alt="Screenshot From 2026-07-16 11-06-20-redacted_dot_app" src="https://github.com/user-attachments/assets/fbf6914e-baaa-4515-b14a-8f0122616ae7" />
+
+
 
