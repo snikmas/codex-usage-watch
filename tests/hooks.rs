@@ -386,7 +386,9 @@ fn generated_hook_commands_execute_adversarial_paths_literally() {
     let bin_dir = temp.path().join(component);
     fs::create_dir_all(&bin_dir).expect("create adversarial binary directory");
     let copied_binary = bin_dir.join("codex-5h");
-    fs::copy(env!("CARGO_BIN_EXE_codex-5h"), &copied_binary).expect("copy tracker binary");
+    let staged_binary = bin_dir.join(".codex-5h.tmp");
+    fs::copy(env!("CARGO_BIN_EXE_codex-5h"), &staged_binary).expect("stage tracker binary");
+    fs::rename(&staged_binary, &copied_binary).expect("publish tracker binary atomically");
 
     let codex_home = temp.path().join("codex home");
     let state = temp.path().join("state");
