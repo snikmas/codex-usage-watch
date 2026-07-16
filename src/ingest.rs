@@ -13,6 +13,10 @@ use crate::model::{
     UsageObservation, WEEKLY_WINDOW_MINUTES, WeeklySnapshot,
 };
 
+/// A single transcript record is bounded so a malformed local file cannot make
+/// a lifecycle hook allocate memory proportional to an attacker-controlled line.
+pub const MAX_JSONL_RECORD_BYTES: usize = 1024 * 1024;
+
 #[derive(Debug, Error)]
 pub enum IngestError {
     #[error("could not access transcript {path}: {source}")]
@@ -55,6 +59,7 @@ pub struct IngestBatch {
     pub next_offset: u64,
     pub incomplete_tail: bool,
     pub skipped_malformed_lines: usize,
+    pub skipped_oversized_records: usize,
     pub skipped_invalid_records: usize,
     pub skipped_irrelevant_records: usize,
 }
@@ -117,6 +122,7 @@ pub fn ingest_transcript(
         next_offset,
         incomplete_tail: false,
         skipped_malformed_lines: 0,
+        skipped_oversized_records: 0,
         skipped_invalid_records: 0,
         skipped_irrelevant_records: 0,
     };
@@ -124,21 +130,35 @@ pub fn ingest_transcript(
     let mut context = TranscriptContext::default();
     loop {
         let line_offset = next_offset;
-        let mut line = String::new();
-        let bytes_read =
-            reader
-                .read_line(&mut line)
-                .map_err(|source| IngestError::TranscriptIo {
-                    path: canonical_path.clone(),
-                    source,
-                })?;
+        let record =
+            read_bounded_record(&mut reader).map_err(|source| IngestError::TranscriptIo {
+                path: canonical_path.clone(),
+                source,
+            })?;
+        let bytes_read = record.bytes_read;
         if bytes_read == 0 {
             break;
         }
 
         let line_end = line_offset + bytes_read as u64;
         let is_final_line = line_end == file_len;
-        let parsed = serde_json::from_str::<Value>(line.trim_end_matches(['\r', '\n']));
+        if record.oversized {
+            batch.diagnostics.push(diagnostic(
+                &ObservationId::new(&canonical_path, line_offset),
+                None,
+                "oversized_record",
+                Some("record"),
+                "JSONL record exceeds the 1048576-byte safety limit",
+            ));
+            batch.skipped_oversized_records += 1;
+            batch.skipped_invalid_records += 1;
+            next_offset = line_end;
+            batch.next_offset = next_offset;
+            continue;
+        }
+        let parsed = serde_json::from_slice::<Value>(
+            record.bytes.strip_suffix(b"\r").unwrap_or(&record.bytes),
+        );
         let value = match parsed {
             Ok(value) => value,
             Err(_) if is_final_line => {
@@ -185,6 +205,47 @@ pub fn ingest_transcript(
     }
 
     Ok(batch)
+}
+
+struct BoundedRecord {
+    bytes: Vec<u8>,
+    bytes_read: usize,
+    oversized: bool,
+}
+
+fn read_bounded_record(reader: &mut impl BufRead) -> io::Result<BoundedRecord> {
+    let mut bytes = Vec::new();
+    let mut bytes_read = 0usize;
+    let mut oversized = false;
+
+    loop {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            break;
+        }
+        let newline = available.iter().position(|byte| *byte == b'\n');
+        let consumed = newline.map_or(available.len(), |index| index + 1);
+        let content_len = newline.unwrap_or(consumed);
+        if !oversized {
+            let remaining = MAX_JSONL_RECORD_BYTES.saturating_sub(bytes.len());
+            let retained = content_len.min(remaining);
+            bytes.extend_from_slice(&available[..retained]);
+            if content_len > remaining {
+                oversized = true;
+            }
+        }
+        bytes_read = bytes_read.saturating_add(consumed);
+        reader.consume(consumed);
+        if newline.is_some() {
+            break;
+        }
+    }
+
+    Ok(BoundedRecord {
+        bytes,
+        bytes_read,
+        oversized,
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

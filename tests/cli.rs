@@ -4,6 +4,9 @@ use std::process::Command;
 
 use serde_json::Value;
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 fn command(state: &tempfile::TempDir, codex_home: &tempfile::TempDir) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_codex-5h"));
     command
@@ -263,4 +266,49 @@ fn doctor_reports_malformed_hooks_and_corrupt_state_together() {
     assert!(stdout.contains("Session metadata    accessible"));
     assert!(stdout.contains("Requests continue   yes"));
     assert!(String::from_utf8_lossy(&output.stderr).contains("independent issue(s)"));
+}
+
+#[test]
+fn doctor_json_and_support_bundle_are_versioned_and_privacy_sanitized() {
+    let state = tempfile::tempdir().unwrap();
+    let codex_home = tempfile::tempdir().unwrap();
+    let json_output = command(&state, &codex_home)
+        .args(["doctor", "--json"])
+        .output()
+        .unwrap();
+    assert!(json_output.status.success());
+    let report: Value = serde_json::from_slice(&json_output.stdout).unwrap();
+    assert_eq!(report["contract"], "codex-usage-watch.doctor.v1");
+    assert_eq!(report["requests_continue"], true);
+    assert_eq!(report["hooks"]["trust"], "must_be_confirmed_inside_codex");
+
+    let encoded = String::from_utf8(json_output.stdout).unwrap();
+    for forbidden in [
+        state.path().to_string_lossy(),
+        codex_home.path().to_string_lossy(),
+        std::borrow::Cow::Borrowed("transcript_path"),
+        std::borrow::Cow::Borrowed("source_file"),
+        std::borrow::Cow::Borrowed("state.sqlite3"),
+    ] {
+        assert!(!encoded.contains(forbidden.as_ref()));
+    }
+
+    let bundle = state.path().join("support.json");
+    let bundle_output = command(&state, &codex_home)
+        .args([
+            "doctor",
+            "--support-bundle",
+            bundle.to_str().unwrap(),
+            "--confirm",
+        ])
+        .output()
+        .unwrap();
+    assert!(bundle_output.status.success());
+    let bundled: Value = serde_json::from_slice(&fs::read(&bundle).unwrap()).unwrap();
+    assert_eq!(bundled["contract"], "codex-usage-watch.doctor.v1");
+    #[cfg(unix)]
+    assert_eq!(
+        fs::metadata(bundle).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
 }

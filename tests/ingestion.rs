@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, TimeDelta, Utc};
 use codex_usage_watch::{
-    DiscoveryOptions, HookInput, IngestOptions, TranscriptCursor, discover_recent_transcripts,
-    ingest_hook_transcript, ingest_transcript,
+    DiscoveryOptions, HookInput, IngestOptions, MAX_JSONL_RECORD_BYTES, TranscriptCursor,
+    discover_recent_transcripts, ingest_hook_transcript, ingest_transcript,
 };
 use tempfile::TempDir;
 
@@ -323,4 +323,96 @@ fn session_metadata_partitions_imported_evidence_without_retaining_content() {
             .unwrap()
             .contains("PRIVATE")
     );
+}
+
+#[test]
+fn oversized_records_are_bounded_and_do_not_hide_later_valid_records() {
+    let temp = TempDir::new().unwrap();
+    let path = temp.path().join("oversized.jsonl");
+    let valid = include_str!("fixtures/normal_growth.jsonl")
+        .lines()
+        .next()
+        .unwrap();
+    let mut contents = vec![b' '; MAX_JSONL_RECORD_BYTES + 64];
+    contents.push(b'\n');
+    contents.extend_from_slice(valid.as_bytes());
+    contents.push(b'\n');
+    fs::write(&path, contents).unwrap();
+
+    let batch = ingest_transcript(&path, TranscriptCursor::default(), &fixture_options()).unwrap();
+    assert_eq!(batch.skipped_oversized_records, 1);
+    assert_eq!(batch.snapshots.len(), 1);
+    assert_eq!(batch.snapshots[0].used_percent, 20.0);
+    assert!(batch.diagnostics.iter().any(|item| {
+        item.code == "oversized_record" && !item.message.contains(path.to_string_lossy().as_ref())
+    }));
+    assert_eq!(batch.next_offset, fs::metadata(path).unwrap().len());
+}
+
+#[cfg(unix)]
+#[test]
+fn transcript_paths_with_spaces_and_quotes_are_supported() {
+    let temp = TempDir::new().unwrap();
+    let path = temp.path().join("session space 'quote'.jsonl");
+    fs::copy(fixture("normal_growth.jsonl"), &path).unwrap();
+    let batch = ingest_transcript(&path, TranscriptCursor::default(), &fixture_options()).unwrap();
+    assert_eq!(batch.snapshots.len(), 2);
+    assert_eq!(batch.source_file, fs::canonicalize(path).unwrap());
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+#[test]
+fn transcript_paths_with_non_utf8_bytes_are_supported_where_the_filesystem_allows_them() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let temp = TempDir::new().unwrap();
+    let mut name = b"session-non-utf8-".to_vec();
+    name.push(0xff);
+    name.extend_from_slice(b".jsonl");
+    let path = temp.path().join(OsString::from_vec(name));
+    fs::copy(fixture("normal_growth.jsonl"), &path).unwrap();
+    let batch = ingest_transcript(&path, TranscriptCursor::default(), &fixture_options()).unwrap();
+    assert_eq!(batch.snapshots.len(), 2);
+    assert_eq!(batch.source_file, fs::canonicalize(path).unwrap());
+}
+
+#[test]
+fn discovered_file_can_be_replaced_before_ingestion() {
+    let temp = TempDir::new().unwrap();
+    let day = temp.path().join("2030/01/03");
+    fs::create_dir_all(&day).unwrap();
+    let path = day.join("replace-me.jsonl");
+    fs::write(&path, b"old\n").unwrap();
+    let found = discover_recent_transcripts(
+        temp.path(),
+        dt("2030-01-03T12:00:00Z"),
+        DiscoveryOptions::default(),
+    )
+    .unwrap();
+    fs::copy(fixture("normal_growth.jsonl"), &path).unwrap();
+    let batch =
+        ingest_transcript(&found[0], TranscriptCursor::default(), &fixture_options()).unwrap();
+    assert_eq!(batch.snapshots.len(), 2);
+}
+
+#[test]
+fn large_history_discovery_stays_inside_configured_bounds() {
+    let temp = TempDir::new().unwrap();
+    let day = temp.path().join("2030/01/03");
+    fs::create_dir_all(&day).unwrap();
+    for index in 0..400 {
+        fs::write(day.join(format!("session-{index:03}.jsonl")), b"{}\n").unwrap();
+    }
+    let found = discover_recent_transcripts(
+        temp.path(),
+        dt("2030-01-03T12:00:00Z"),
+        DiscoveryOptions {
+            lookback_days: 1,
+            max_files: 8,
+            max_entries_per_day: 64,
+        },
+    )
+    .unwrap();
+    assert_eq!(found.len(), 8);
 }

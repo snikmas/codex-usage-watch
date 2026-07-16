@@ -51,6 +51,13 @@ Initialize without importing history:
 
 History import is optional and consent-gated; use `setup --preview` first.
 
+On Unix, startup creates or repairs the tracker state directory to `0700` and
+tracker-owned state files to `0600`. It does not chmod the selected parent
+directory. If `doctor` reports a permission-related I/O failure, verify that the
+current user owns the state directory, then rerun `doctor`; do not solve it by
+making the directory group- or world-readable. Windows permission bits are not
+claimed as protection, and Windows installation is unsupported in this beta.
+
 ## Backup and restore
 
 Create and integrity-check a backup with the helper included in the archive:

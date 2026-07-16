@@ -11,6 +11,9 @@ use codex_usage_watch::{
 use rusqlite::Connection;
 use tempfile::TempDir;
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 fn dt(value: &str) -> DateTime<Utc> {
     DateTime::parse_from_rfc3339(value)
         .unwrap()
@@ -83,6 +86,65 @@ fn migration_creates_the_stage_three_schema_and_wal_database() {
         .pragma_query_value(None, "journal_mode", |row| row.get(0))
         .unwrap();
     assert_eq!(journal_mode, "wal");
+}
+
+#[cfg(unix)]
+#[test]
+fn startup_repairs_private_state_permissions_without_touching_the_parent() {
+    let temp = TempDir::new().unwrap();
+    let parent = temp.path().join("user-selected-parent");
+    let state = parent.join("tracker-state");
+    fs::create_dir_all(&state).unwrap();
+    fs::set_permissions(&parent, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(&state, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let mut store = StateStore::open_in(&state, TrackerConfig::default()).unwrap();
+    store
+        .ingest(
+            fixture_snapshots("normal_growth.jsonl"),
+            dt("2030-01-01T12:10:00Z"),
+        )
+        .unwrap();
+    fs::write(state.join("calibration-report.json"), b"{}\n").unwrap();
+    fs::write(state.join("release-metadata.json"), b"{}\n").unwrap();
+    for path in [
+        state.join("state.sqlite3"),
+        state.join("display.json"),
+        state.join("calibration-report.json"),
+        state.join("release-metadata.json"),
+    ] {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o644)).unwrap();
+    }
+    fs::set_permissions(&state, fs::Permissions::from_mode(0o755)).unwrap();
+    drop(store);
+
+    let store = StateStore::open_in(&state, TrackerConfig::default()).unwrap();
+    assert_eq!(
+        fs::metadata(&parent).unwrap().permissions().mode() & 0o777,
+        0o755
+    );
+    assert_eq!(
+        fs::metadata(&state).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+    for path in [
+        state.join("state.sqlite3"),
+        state.join("display.json"),
+        state.join("calibration-report.json"),
+        state.join("release-metadata.json"),
+    ] {
+        assert_eq!(
+            fs::metadata(path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+
+    let backup = parent.join("backup.sqlite3");
+    store.backup_database(&backup).unwrap();
+    assert_eq!(
+        fs::metadata(backup).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
 }
 
 #[test]

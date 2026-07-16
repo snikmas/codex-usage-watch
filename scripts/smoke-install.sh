@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 022
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEMP="$(mktemp -d)"
@@ -21,6 +22,21 @@ printf '%s' '{"hook_event_name":"SessionStart","transcript_path":null,"codex_ver
 "$PREFIX/bin/codex-5h" history --json >/dev/null
 "$PREFIX/bin/codex-5h" reset --confirm >/dev/null
 "$ROOT/scripts/backup-state.sh" "$TEMP/backup.sqlite3"
+python3 - "$CODEX_USAGE_WATCH_HOME" "$TEMP/backup.sqlite3" <<'PY'
+import pathlib
+import stat
+import sys
+
+state = pathlib.Path(sys.argv[1])
+backup = pathlib.Path(sys.argv[2])
+assert stat.S_IMODE(state.stat().st_mode) == 0o700
+for path in [state / "state.sqlite3", state / "display.json", backup]:
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600, path
+for suffix in ("-wal", "-shm"):
+    path = state / f"state.sqlite3{suffix}"
+    if path.exists():
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600, path
+PY
 
 # Prove the documented restore sequence against a consistent backup.
 "$PREFIX/bin/codex-5h" uninstall --confirm >/dev/null

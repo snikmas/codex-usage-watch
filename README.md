@@ -7,6 +7,13 @@ many weekly percentage points the same local window consumed.
 It never blocks a prompt, never treats an estimate as an official quota, and
 never stores prompt text, responses, tool arguments, or source code.
 
+**Current release state:** `0.1.0-beta.1` is still a Linux x86_64 beta candidate,
+not a published release. macOS is preview-only, Windows installation is
+unsupported, and the native Codex footer is a separate development preview.
+
+Use it if you want a private local pressure gauge while the official five-hour
+number is unavailable. Do not use it as billing evidence or an official quota.
+
 Development-preview native footer (not included in the beta artifact):
 
 ```text
@@ -69,6 +76,33 @@ make test
 make lint
 make build
 ```
+
+## Safe first five minutes
+
+Typical states:
+
+```text
+fresh:    5 hour estimate: 32% | 5.1 weekly points
+stale:    stale estimate: 32% | last observation is too old
+unknown:  five-hour estimate unavailable | waiting for a supported observation
+high:     5 hour estimate: 114% | 18.0 weekly points | Codex continues
+```
+
+```text
+checksummed archive -> inspect docs -> install binary -> preview/skip import
+                    -> install hooks -> review and trust in /hooks -> status
+```
+
+1. Use the released-artifact instructions in [docs/INSTALL.md](docs/INSTALL.md),
+   or the clearly separated source-checkout path there while no release exists.
+2. Run `codex-5h setup --skip-import` to start without reading history.
+3. Run `codex-5h install --confirm`, then review and trust all three definitions
+   in Codex `/hooks` before opening a fresh session.
+4. Run `codex-5h status` and `codex-5h doctor`.
+
+Skipping import intentionally creates no historical evidence. The first useful
+reading appears after a trusted lifecycle hook or explicit `refresh` sees a
+supported rate-limit observation; until then, `unknown` is the honest result.
 
 ## Install and first setup
 
@@ -153,6 +187,8 @@ codex-5h analyze [--json]
 codex-5h reset --confirm
 codex-5h doctor
 codex-5h doctor --compat [--refresh-releases]
+codex-5h doctor --json
+codex-5h doctor --support-bundle FILE --confirm
 codex-5h calibration apply WEEKLY_POINTS --confirm
 codex-5h backup DESTINATION.sqlite3 --confirm
 codex-5h install --confirm
@@ -175,6 +211,10 @@ state/schema, projection, session-directory, hook configuration/path, and basic
 compatibility checks independently before returning failure. It cannot prove the
 interactive Codex trust decision. `doctor --compat` provides the detailed
 compatibility report.
+
+`doctor --json` and the optional support bundle use the versioned
+`codex-usage-watch.doctor.v1` contract. They omit transcript paths, state paths,
+local account identifiers, raw observations, and databases.
 
 `status --json` is the stable `codex-usage-watch.status.v1` machine contract.
 `refresh` checks at most eight transcripts from the last two days, or exactly
