@@ -141,3 +141,7 @@ ALLOW_DIRTY=1 bash scripts/release-gate.sh
 Technical details live in [the support matrix](docs/SUPPORT.md),
 [release policy](docs/RELEASE.md), [privacy model](docs/PRIVACY.md), and the
 historical implementation notes under `notes/`.
+
+## Some Screenshots:
+<img width="624" height="200" alt="Screenshot From 2026-07-16 10-53-57" src="https://github.com/user-attachments/assets/43efedcf-ef89-427a-b73c-3f584f72f5fa" />
+
