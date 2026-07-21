@@ -98,7 +98,7 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
   DEFAULT_HOME="$TEMP/default home"
   mkdir -p "$DEFAULT_HOME/.codex"
   env -u CODEX_USAGE_WATCH_HOME HOME="$DEFAULT_HOME" CODEX_HOME="$DEFAULT_HOME/.codex" \
-    "$BIN" setup --skip-import >/dev/null
+    "$BIN" refresh >/dev/null
   DEFAULT_STATE="$DEFAULT_HOME/Library/Application Support/dev.codex-usage-watch.codex-usage-watch"
   test -f "$DEFAULT_STATE/state.sqlite3"
   python3 - "$DEFAULT_STATE" <<'PY'
