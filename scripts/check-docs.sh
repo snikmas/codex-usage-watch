@@ -6,6 +6,7 @@ cd "$ROOT"
 
 bash scripts/check-versions.sh
 bash scripts/check-package-docs.sh "$ROOT"
+bash scripts/test-acceptance-records.sh
 
 python3 - "$ROOT" <<'PY'
 import pathlib
@@ -34,6 +35,7 @@ for value in [
     "## Privacy",
     "## Limitations",
     "## Contributing",
+    "docs/ACCEPTANCE.md",
 ]:
     if value.lower() not in readme.lower():
         raise SystemExit(f"README is missing {value!r}")

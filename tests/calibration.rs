@@ -21,6 +21,82 @@ fn token_line(at: &str, five_used: f64, five_reset: i64, weekly_used: f64) -> St
     )
 }
 
+fn token_line_with_resets(
+    at: &str,
+    five_used: f64,
+    five_reset: &str,
+    weekly_used: f64,
+    weekly_reset: &str,
+) -> String {
+    format!(
+        "{{\"timestamp\":\"{at}\",\"type\":\"event_msg\",\"payload\":{{\"type\":\"token_count\",\"model\":\"gpt-test\",\"service_tier\":\"standard\",\"rate_limits\":{{\"plan_type\":\"plus\",\"primary\":{{\"used_percent\":{five_used},\"window_minutes\":300,\"resets_at\":\"{five_reset}\"}},\"secondary\":{{\"used_percent\":{weekly_used},\"window_minutes\":10080,\"resets_at\":\"{weekly_reset}\"}}}}}}}}"
+    )
+}
+
+#[test]
+fn calibration_normalizes_jitter_but_never_spans_a_weekly_reset() {
+    let temp = TempDir::new().unwrap();
+    let transcript = temp.path().join("boundaries.jsonl");
+    let lines = [
+        token_line_with_resets(
+            "2030-01-01T00:00:00Z",
+            0.0,
+            "2030-01-01T05:00:00Z",
+            10.0,
+            "2030-01-01T02:00:00Z",
+        ),
+        token_line_with_resets(
+            "2030-01-01T01:00:00Z",
+            50.0,
+            "2030-01-01T05:00:01Z",
+            20.0,
+            "2030-01-01T02:00:01Z",
+        ),
+        token_line_with_resets(
+            "2030-01-01T02:01:00Z",
+            50.0,
+            "2030-01-01T05:00:00Z",
+            1.0,
+            "2030-01-08T02:00:00Z",
+        ),
+        token_line_with_resets(
+            "2030-01-01T03:00:00Z",
+            100.0,
+            "2030-01-01T05:00:00Z",
+            11.0,
+            "2030-01-08T02:00:00Z",
+        ),
+    ];
+    fs::write(&transcript, format!("{}\n", lines.join("\n"))).unwrap();
+    let mut store =
+        StateStore::open_in(temp.path().join("state"), TrackerConfig::default()).unwrap();
+    store
+        .ingest_transcript(
+            &transcript,
+            &IngestOptions {
+                now: dt("2030-01-01T03:01:00Z"),
+                future_tolerance: TimeDelta::minutes(5),
+            },
+        )
+        .unwrap();
+    let report = store
+        .analyze_calibration(dt("2030-01-01T03:02:00Z"))
+        .unwrap();
+    assert_eq!(report.total_completed_window_count, 2);
+    assert_eq!(
+        report.samples[0].window_ended_at,
+        dt("2030-01-01T01:00:00Z")
+    );
+    assert_eq!(
+        report.samples[1].window_started_at,
+        dt("2030-01-01T02:01:00Z")
+    );
+    assert_ne!(
+        report.samples[0].weekly_reset_at,
+        report.samples[1].weekly_reset_at
+    );
+}
+
 #[test]
 fn five_windows_produce_robust_idempotent_report_and_no_auto_apply() {
     let temp = TempDir::new().unwrap();

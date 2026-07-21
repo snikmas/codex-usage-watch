@@ -11,7 +11,7 @@ use super::{
 use crate::calibration::CalibrationConfidence;
 use crate::model::{TrackerConfig, WindowStatus};
 
-const DISPLAY_SCHEMA_VERSION: u32 = 1;
+const DISPLAY_SCHEMA_VERSION: u32 = 2;
 
 impl StateStore {
     pub fn load_or_recover_display(
@@ -122,12 +122,25 @@ fn read_display(
             _ => CalibrationKind::Historical,
         })
         .unwrap_or(CalibrationKind::Historical);
-    type CurrentRow = (String, String, String, f64, f64, f64, String, String);
+    type CurrentRow = (
+        String,
+        String,
+        String,
+        f64,
+        f64,
+        f64,
+        String,
+        String,
+        String,
+        String,
+        Option<f64>,
+    );
     let row: Option<CurrentRow> = transaction
         .query_row(
             "SELECT started_at, ends_at, latest_observed_at, latest_used_percent,
                     calibration_weekly_points, accumulated_weekly_points,
-                    calibration_id, calibration_confidence
+                    calibration_id, calibration_confidence, boundary_kind,
+                    boundary_at, server_five_hour_percent
              FROM windows WHERE lifecycle = 'current'",
             [],
             |row| {
@@ -140,6 +153,9 @@ fn read_display(
                     row.get(5)?,
                     row.get(6)?,
                     row.get(7)?,
+                    row.get(8)?,
+                    row.get(9)?,
+                    row.get(10)?,
                 ))
             },
         )
@@ -153,6 +169,9 @@ fn read_display(
         weekly_points,
         calibration_id,
         confidence,
+        boundary_kind,
+        boundary_at,
+        server_five_hour_percent,
     )) = row
     else {
         return Ok(unknown_display(
@@ -203,24 +222,10 @@ fn read_display(
     let age = (now - observed).num_seconds().max(0);
     let stale = now >= end || now - observed > config.stale_after();
     let local_estimate = weekly_points / calibration * 100.0;
-    let server_five_hour: Option<(f64, String)> = transaction
-        .query_row(
-            "SELECT w.used_percent, o.observed_at
-             FROM observed_rate_limit_windows w
-             JOIN rate_limit_observations o
-               ON o.source_file = w.source_file AND o.byte_offset = w.byte_offset
-             WHERE w.window_kind = 'five_hour'
-             ORDER BY o.observed_at DESC, o.source_file DESC, o.byte_offset DESC LIMIT 1",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()?;
-    let server_five_hour = server_five_hour
-        .map(|(value, at)| -> Result<_, StateError> { Ok((value, parse_timestamp(&at)?)) })
-        .transpose()?
-        .filter(|(_, at)| now - *at <= config.stale_after());
-    let (five_hour_value, five_hour_value_source) = server_five_hour
-        .map(|(value, _)| (value, "real_server_five_hour".to_string()))
+    let fresh_server_five_hour =
+        server_five_hour_percent.filter(|_| now - observed <= config.stale_after());
+    let (five_hour_value, five_hour_value_source) = fresh_server_five_hour
+        .map(|value| (value, "real_server_five_hour".to_string()))
         .unwrap_or((local_estimate, "local_calibrated_estimate".to_string()));
     Ok(DisplayCacheV1 {
         schema_version: DISPLAY_SCHEMA_VERSION,
@@ -235,6 +240,8 @@ fn read_display(
         observed_at: Some(observed),
         window_started_at: Some(start),
         window_ends_at: Some(end),
+        window_boundary_kind: Some(boundary_kind),
+        window_boundary_at: Some(parse_timestamp(&boundary_at)?),
         weekly_points: Some(weekly_points),
         five_hour_estimate_percent: Some(five_hour_value),
         five_hour_estimate_left_percent: Some((100.0 - five_hour_value).max(0.0)),
@@ -264,6 +271,8 @@ fn unknown_display(
         observed_at: None,
         window_started_at: None,
         window_ends_at: None,
+        window_boundary_kind: None,
+        window_boundary_at: None,
         weekly_points: None,
         five_hour_estimate_percent: None,
         five_hour_estimate_left_percent: None,

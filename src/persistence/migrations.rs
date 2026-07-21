@@ -309,6 +309,40 @@ fn migrate_to(connection: &mut Connection, target_version: i64) -> Result<(), St
         )?;
         transaction.pragma_update(None, "user_version", 10)?;
     }
+    if version < 11 && target_version >= 11 {
+        transaction.execute_batch(
+            "ALTER TABLE windows ADD COLUMN boundary_kind TEXT NOT NULL DEFAULT 'initial_observation';
+             ALTER TABLE windows ADD COLUMN boundary_at TEXT NOT NULL DEFAULT '';
+             ALTER TABLE windows ADD COLUMN latest_source_file TEXT;
+             ALTER TABLE windows ADD COLUMN latest_byte_offset INTEGER;
+             ALTER TABLE windows ADD COLUMN server_five_hour_percent REAL;
+             UPDATE windows SET boundary_at = started_at WHERE boundary_at = '';
+             CREATE TABLE reset_events (
+                 source_file TEXT NOT NULL,
+                 byte_offset INTEGER NOT NULL CHECK (byte_offset >= 0),
+                 observed_at TEXT NOT NULL,
+                 boundary_at TEXT,
+                 classification TEXT NOT NULL CHECK (classification IN (
+                     'natural_five_hour', 'natural_weekly', 'inferred_full',
+                     'ambiguous', 'old_epoch'
+                 )),
+                 confidence TEXT NOT NULL CHECK (confidence IN ('observed_epoch', 'inferred')),
+                 reason TEXT NOT NULL,
+                 previous_five_hour_resets_at TEXT,
+                 new_five_hour_resets_at TEXT,
+                 previous_weekly_resets_at TEXT,
+                 new_weekly_resets_at TEXT,
+                 PRIMARY KEY (source_file, byte_offset)
+             );
+             CREATE INDEX reset_events_order
+                 ON reset_events(observed_at, source_file, byte_offset);",
+        )?;
+        transaction.execute(
+            "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
+            params![11, Utc::now().to_rfc3339()],
+        )?;
+        transaction.pragma_update(None, "user_version", 11)?;
+    }
     transaction.commit()?;
     Ok(())
 }

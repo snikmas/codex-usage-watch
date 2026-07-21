@@ -15,12 +15,15 @@ rm -rf "$DIST/$NAME"
 mkdir -p "$DIST/$NAME"
 install -m 0755 "$ROOT/target/release/codex-watch" "$DIST/$NAME/codex-watch"
 install -m 0644 "$ROOT/README.md" "$ROOT/LICENSE" "$DIST/$NAME/"
-install -d "$DIST/$NAME/docs/images"
+install -d "$DIST/$NAME/docs" "$DIST/$NAME/docs/images"
+install -m 0644 "$ROOT"/docs/*.md "$ROOT"/docs/*.json "$DIST/$NAME/docs/"
 install -m 0644 "$ROOT"/docs/images/*.png "$DIST/$NAME/docs/images/"
 install -d "$DIST/$NAME/scripts"
 install -m 0755 "$ROOT/scripts/install.sh" "$ROOT/scripts/uninstall.sh" \
   "$ROOT/scripts/verify-install.sh" "$ROOT/scripts/backup-state.sh" \
-  "$ROOT/scripts/check-package-docs.sh" "$DIST/$NAME/scripts/"
+  "$ROOT/scripts/check-package-docs.sh" \
+  "$ROOT/scripts/validate-acceptance-record.py" \
+  "$ROOT/scripts/verify-release-lifecycle.sh" "$DIST/$NAME/scripts/"
 bash "$ROOT/scripts/generate-provenance.sh" "$DIST/$NAME"
 tar -C "$DIST" -czf "$DIST/$NAME.tar.gz" "$NAME"
 cp "$ROOT/target/package/codex-usage-watch-$VERSION.crate" "$DIST/"
@@ -38,10 +41,15 @@ for required in \
   "$NAME/README.md" \
   "$NAME/BUILD-INFO.json" \
   "$NAME/SBOM.spdx.json" \
+  "$NAME/docs/ACCEPTANCE.md" \
+  "$NAME/docs/MACOS.md" \
+  "$NAME/docs/acceptance-record-v1.schema.json" \
   "$NAME/docs/images/terminal-status.png" \
   "$NAME/scripts/install.sh" \
   "$NAME/scripts/verify-install.sh" \
   "$NAME/scripts/backup-state.sh" \
+  "$NAME/scripts/validate-acceptance-record.py" \
+  "$NAME/scripts/verify-release-lifecycle.sh" \
   "$NAME/scripts/uninstall.sh" \
   "$NAME/scripts/check-package-docs.sh"; do
   tar -tzf "$NAME.tar.gz" | grep -Fx "$required" >/dev/null || {

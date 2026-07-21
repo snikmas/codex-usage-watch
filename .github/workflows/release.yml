@@ -8,8 +8,16 @@ permissions:
   contents: write
 
 jobs:
-  linux-x86_64:
-    runs-on: ubuntu-latest
+  artifacts:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -18,21 +26,70 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt, clippy
-      - name: Verify tag and release gates
+      - name: Verify tag and target
         shell: bash
         run: |
           version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)"
           test "$GITHUB_REF_NAME" = "v$version"
-          bash scripts/release-gate.sh
+          test "$(rustc -vV | sed -n 's/^host: //p')" = "${{ matrix.target }}"
+      - name: Verify Linux release gate
+        if: runner.os == 'Linux'
+        shell: bash
+        run: bash scripts/release-gate.sh
+      - name: Build and verify Apple Silicon artifact
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          bash scripts/check-docs.sh
+          bash scripts/check-plugin.sh
+          cargo fmt --check
+          cargo clippy --locked --all-targets --all-features -- -D warnings
+          cargo test --locked --all-targets
+          bash scripts/package-release.sh
+          bash scripts/test-privacy-scan.sh
+          archive="target/release-dist/codex-usage-watch-$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)-${{ matrix.target }}.tar.gz"
+          bash scripts/verify-release-lifecycle.sh "$archive" target/release-dist/SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: runner.os == 'Linux'
+        with:
+          name: release-${{ matrix.target }}
+          path: |
+            target/release-dist/*.tar.gz
+            target/release-dist/SHA256SUMS
+            target/release-dist/*.crate
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: runner.os == 'macOS'
+        with:
+          name: release-${{ matrix.target }}
+          path: |
+            target/release-dist/*.tar.gz
+            target/release-dist/SHA256SUMS
+          if-no-files-found: error
+
+  publish:
+    needs: artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: release-*
+          path: release-assets
+      - name: Build combined checksum file
+        shell: bash
+        run: |
+          find release-assets -type f -name '*.tar.gz' -exec cp {} . \;
+          find release-assets -type f -name '*.crate' -exec cp {} . \;
+          sha256sum ./*.tar.gz > SHA256SUMS
       - name: Publish checksummed prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            target/release-dist/*.tar.gz \
-            target/release-dist/*.crate \
-            target/release-dist/SHA256SUMS \
+            ./*.tar.gz \
+            ./*.crate \
+            SHA256SUMS \
             --repo "$GITHUB_REPOSITORY" \
             --title "Codex Usage Watch $GITHUB_REF_NAME" \
             --generate-notes \

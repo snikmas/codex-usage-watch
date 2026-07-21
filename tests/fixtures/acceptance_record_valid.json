@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2030-01-01T17:00:00Z",
+  "observer_role": "maintainer",
+  "environment": {
+    "os": "Ubuntu 25.10",
+    "architecture": "x86_64",
+    "codex_version": "0.146.0",
+    "artifact_version": "0.1.0-beta.1",
+    "artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "compatibility_result": "compatible",
+    "compatibility_identity": {
+      "plan_type": "plus",
+      "model_slug": "synthetic-model",
+      "service_tier": "default",
+      "schema_fingerprint": "token-count-v1"
+    }
+  },
+  "window": {
+    "started_at": "2030-01-01T12:00:00Z",
+    "ends_at": "2030-01-01T17:00:00Z",
+    "observed_at": "2030-01-01T16:59:00Z"
+  },
+  "reading": {
+    "five_hour_percent": 82.0,
+    "value_source": "local_calibrated_estimate",
+    "weekly_movement_points": 13.0,
+    "freshness": "fresh"
+  },
+  "ground_truth": {
+    "available": true,
+    "identity_safe": true,
+    "five_hour_percent": 80.0,
+    "absolute_error_points": 2.0
+  },
+  "scenarios": ["normal", "threshold_crossing"],
+  "warnings_emitted": [75],
+  "usability": {
+    "estimated": "clear",
+    "weekly_cost": "clear",
+    "stale": "not_observed",
+    "unknown": "not_observed",
+    "over_100": "not_observed",
+    "notice_usefulness": "useful",
+    "note_codes": ["no_help_needed", "privacy_wording_clear"]
+  }
+}

@@ -113,8 +113,8 @@ fn status_json_is_versioned_and_reports_supported_threshold_configuration() {
         .unwrap();
     assert!(output.status.success());
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["contract"], "codex-usage-watch.status.v1");
-    assert_eq!(value["display"]["schema_version"], 1);
+    assert_eq!(value["contract"], "codex-usage-watch.status.v2");
+    assert_eq!(value["display"]["schema_version"], 2);
     assert_eq!(
         value["warning_thresholds_percent"],
         serde_json::json!([60, 80, 100])
@@ -133,7 +133,7 @@ fn status_json_is_versioned_and_reports_supported_threshold_configuration() {
 }
 
 #[test]
-fn status_v1_json_field_contract_remains_backward_compatible() {
+fn status_v2_json_field_contract_includes_reset_boundaries() {
     let state = tempfile::tempdir().unwrap();
     let codex_home = tempfile::tempdir().unwrap();
     let output = command(&state, &codex_home)
@@ -184,13 +184,45 @@ fn status_v1_json_field_contract_remains_backward_compatible() {
             "weekly_limit_used_percent",
             "weekly_points",
             "window_ends_at",
+            "window_boundary_at",
+            "window_boundary_kind",
             "window_started_at",
         ])
     );
-    assert_eq!(value["contract"], "codex-usage-watch.status.v1");
-    assert_eq!(value["display"]["schema_version"], 1);
+    assert_eq!(value["contract"], "codex-usage-watch.status.v2");
+    assert_eq!(value["display"]["schema_version"], 2);
     assert_eq!(value["display"]["status"], "unknown");
     assert_eq!(value["display"]["stale"], true);
+}
+
+#[test]
+fn history_json_is_versioned_and_reports_honest_reset_labels() {
+    let state = tempfile::tempdir().unwrap();
+    let codex_home = tempfile::tempdir().unwrap();
+    let transcript = state.path().join("reset.jsonl");
+    fs::write(
+        &transcript,
+        concat!(
+            "{\"timestamp\":\"2025-01-01T12:00:00Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"rate_limits\":{\"primary\":{\"used_percent\":60,\"window_minutes\":300,\"resets_at\":\"2025-01-01T15:00:00Z\"},\"secondary\":{\"used_percent\":50,\"window_minutes\":10080,\"resets_at\":\"2025-01-08T00:00:00Z\"},\"plan_type\":\"plus\"}}}\n",
+            "{\"timestamp\":\"2025-01-01T12:10:00Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"rate_limits\":{\"primary\":{\"used_percent\":2,\"window_minutes\":300,\"resets_at\":\"2025-01-01T17:10:00Z\"},\"secondary\":{\"used_percent\":3,\"window_minutes\":10080,\"resets_at\":\"2025-01-08T12:10:00Z\"},\"plan_type\":\"plus\"}}}\n"
+        ),
+    )
+    .unwrap();
+    let refresh = command(&state, &codex_home)
+        .args(["refresh", "--transcript", transcript.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(refresh.status.success());
+    let output = command(&state, &codex_home)
+        .args(["history", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["contract"], "codex-usage-watch.history.v2");
+    assert_eq!(value["reset_events"][0]["classification"], "inferred_full");
+    assert_eq!(value["reset_events"][0]["label"], "inferred full reset");
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("user used /usage"));
 }
 
 #[test]

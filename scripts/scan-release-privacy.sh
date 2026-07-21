@@ -78,11 +78,15 @@ with tempfile.TemporaryDirectory(prefix="codex-usage-watch-privacy-") as tempora
         "README.md",
         "SBOM.spdx.json",
         "codex-watch",
+        *{f"docs/{path.name}" for path in (root / "docs").glob("*.md")},
+        *{f"docs/{path.name}" for path in (root / "docs").glob("*.json")},
         *{f"docs/images/{path.name}" for path in (root / "docs/images").glob("*.png")},
         "scripts/backup-state.sh",
         "scripts/check-package-docs.sh",
         "scripts/install.sh",
         "scripts/uninstall.sh",
+        "scripts/validate-acceptance-record.py",
+        "scripts/verify-release-lifecycle.sh",
         "scripts/verify-install.sh",
     }
     actual_files = {

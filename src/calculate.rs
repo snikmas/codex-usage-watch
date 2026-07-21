@@ -5,8 +5,7 @@ use chrono::{DateTime, Utc};
 use crate::model::{
     LocalWindow, MeterReading, ObservationId, TrackerConfig, WeeklySnapshot, WindowStatus,
 };
-
-const RESET_TIMESTAMP_JITTER: chrono::TimeDelta = chrono::TimeDelta::seconds(60);
+use crate::reset::RESET_TIMESTAMP_JITTER;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum WeeklyTransition {
