@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/snikmas/codex-usage-watch/blob/main/docs/acceptance-record-v1.schema.json",
+  "title": "Codex Usage Watch content-free acceptance record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "recorded_at",
+    "observer_role",
+    "environment",
+    "window",
+    "reading",
+    "ground_truth",
+    "scenarios",
+    "warnings_emitted",
+    "usability"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "recorded_at": { "type": "string", "format": "date-time" },
+    "observer_role": { "enum": ["maintainer", "independent_tester"] },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "architecture", "codex_version", "artifact_version", "artifact_sha256", "compatibility_result", "compatibility_identity"],
+      "properties": {
+        "os": { "type": "string", "minLength": 1 },
+        "architecture": { "type": "string", "minLength": 1 },
+        "codex_version": { "type": "string", "minLength": 1 },
+        "artifact_version": { "type": "string", "minLength": 1 },
+        "artifact_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "compatibility_result": { "enum": ["compatible", "review", "degraded"] },
+        "compatibility_identity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["plan_type", "model_slug", "service_tier", "schema_fingerprint"],
+          "properties": {
+            "plan_type": { "type": "string" },
+            "model_slug": { "type": "string" },
+            "service_tier": { "type": "string" },
+            "schema_fingerprint": { "type": "string" }
+          }
+        }
+      }
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["started_at", "ends_at", "observed_at"],
+      "properties": {
+        "started_at": { "type": ["string", "null"], "format": "date-time" },
+        "ends_at": { "type": ["string", "null"], "format": "date-time" },
+        "observed_at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "reading": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["five_hour_percent", "value_source", "weekly_movement_points", "freshness"],
+      "properties": {
+        "five_hour_percent": { "type": ["number", "null"], "minimum": 0 },
+        "value_source": { "enum": ["local_calibrated_estimate", "real_server_five_hour", "unknown"] },
+        "weekly_movement_points": { "type": ["number", "null"], "minimum": 0 },
+        "freshness": { "enum": ["fresh", "stale", "unknown"] }
+      }
+    },
+    "ground_truth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available", "identity_safe", "five_hour_percent", "absolute_error_points"],
+      "properties": {
+        "available": { "type": "boolean" },
+        "identity_safe": { "type": "boolean" },
+        "five_hour_percent": { "type": ["number", "null"], "minimum": 0 },
+        "absolute_error_points": { "type": ["number", "null"], "minimum": 0 }
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["normal", "low_activity", "stale", "missing_data", "threshold_crossing", "concurrent_sessions", "weekly_reset"] }
+    },
+    "warnings_emitted": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "integer", "minimum": 0 }
+    },
+    "usability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["estimated", "weekly_cost", "stale", "unknown", "over_100", "notice_usefulness", "note_codes"],
+      "properties": {
+        "estimated": { "$ref": "#/$defs/understanding" },
+        "weekly_cost": { "$ref": "#/$defs/understanding" },
+        "stale": { "$ref": "#/$defs/understanding" },
+        "unknown": { "$ref": "#/$defs/understanding" },
+        "over_100": { "$ref": "#/$defs/understanding" },
+        "notice_usefulness": { "enum": ["useful", "annoying", "neutral", "not_observed"] },
+        "note_codes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["no_help_needed", "needed_public_docs", "needed_unpublished_help", "wording_unclear", "threshold_too_early", "threshold_too_late", "duplicate_notice", "privacy_wording_clear", "hook_trust_unclear"] }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "understanding": { "enum": ["clear", "unclear", "not_observed"] }
+  }
+}

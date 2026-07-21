@@ -5,6 +5,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEMP="$(mktemp -d)"
 trap 'rm -rf "$TEMP"' EXIT
 
+checksum() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
 cargo build --manifest-path "$ROOT/Cargo.toml" --locked
 TEST_BIN="$ROOT/target/debug/codex-watch"
 
@@ -72,10 +80,10 @@ NO_HOOK_PREFIX="$TEMP/no-hook-prefix"
 NO_HOOK_HOME="$TEMP/no-hook-home"
 mkdir -p "$NO_HOOK_HOME"
 printf '%s\n' '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"unrelated-hook"}]}]}}' >"$NO_HOOK_HOME/hooks.json"
-before="$(sha256sum "$NO_HOOK_HOME/hooks.json")"
+before="$(checksum "$NO_HOOK_HOME/hooks.json")"
 PREFIX="$NO_HOOK_PREFIX" CODEX_HOME="$NO_HOOK_HOME" \
   "$ROOT/scripts/uninstall.sh" --confirm >/dev/null
-after="$(sha256sum "$NO_HOOK_HOME/hooks.json")"
+after="$(checksum "$NO_HOOK_HOME/hooks.json")"
 test "$before" = "$after"
 assert_hook_state "$NO_HOOK_HOME/hooks.json" absent unrelated
 

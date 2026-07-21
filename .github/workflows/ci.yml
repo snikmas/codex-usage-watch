@@ -55,7 +55,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-15
+            target: aarch64-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -63,8 +67,18 @@ jobs:
         with:
           toolchain: stable
       - run: bash scripts/check-versions.sh
+      - name: Verify runner architecture
+        shell: bash
+        run: |
+          test "$(rustc -vV | sed -n 's/^host: //p')" = "${{ matrix.target }}"
       - run: bash scripts/smoke-install.sh
       - run: bash scripts/package-release.sh
+      - name: Verify exact host artifact lifecycle
+        shell: bash
+        run: |
+          archive="target/release-dist/codex-usage-watch-$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)-${{ matrix.target }}.tar.gz"
+          bash scripts/test-privacy-scan.sh
+          bash scripts/verify-release-lifecycle.sh "$archive" target/release-dist/SHA256SUMS
 
   exact-artifact:
     name: Linux exact artifact, privacy, and permissions

@@ -378,7 +378,7 @@ fn print_status(json: bool) -> Result<(), Box<dyn std::error::Error>> {
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
-                "contract": "codex-usage-watch.status.v1",
+                "contract": "codex-usage-watch.status.v2",
                 "display": display,
                 "active_calibration_weekly_points": active_calibration,
                 "warning_thresholds_percent": config.warning_thresholds(),
@@ -465,12 +465,15 @@ fn print_history(json: bool) -> Result<(), Box<dyn std::error::Error>> {
     let store = StateStore::open(TrackerConfig::from_env()?)?;
     let windows = store.recent_windows(20)?;
     let controls = store.recent_control_events(20)?;
+    let resets = store.recent_reset_events(20)?;
     if json {
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
+                "contract": "codex-usage-watch.history.v2",
                 "windows": windows,
                 "control_events": controls,
+                "reset_events": resets,
             }))?
         );
         return Ok(());
@@ -481,14 +484,27 @@ fn print_history(json: bool) -> Result<(), Box<dyn std::error::Error>> {
     }
     for window in windows {
         println!(
-            "  {} · {} · 5h {:.0}% · week +{:.1} · {:?} · {}",
+            "  {} · {} · 5h {:.0}% · week +{:.1} · {:?} · {} @ {} · {}",
             format_local_timestamp(window.started_at),
             window.lifecycle,
             window.five_hour_estimate_percent,
             window.weekly_points,
             window.calibration_confidence,
+            window.boundary_kind,
+            format_local_timestamp(window.boundary_at),
             window.calibration_id
         );
+    }
+    if !resets.is_empty() {
+        println!("Server reset history (inferred from structured quota epochs; local time)");
+        for event in resets {
+            println!(
+                "  {} · {} · {}",
+                format_local_timestamp(event.boundary_at.unwrap_or(event.observed_at)),
+                event.label,
+                event.reason
+            );
+        }
     }
     if !controls.is_empty() {
         println!("Control audit (local time)");
@@ -574,6 +590,7 @@ struct DoctorStateV1 {
     available: bool,
     schema_version: Option<i64>,
     projection_state: Option<String>,
+    reset_classifications: std::collections::BTreeMap<String, usize>,
 }
 
 #[derive(Debug, Serialize)]
@@ -588,6 +605,7 @@ fn collect_doctor_report() -> DoctorReportV1 {
         available: false,
         schema_version: None,
         projection_state: None,
+        reset_classifications: std::collections::BTreeMap::new(),
     };
     let mut compatibility = None;
 
@@ -606,6 +624,10 @@ fn collect_doctor_report() -> DoctorReportV1 {
                     state.projection_state = Some(format!("{:?}", display.status).to_lowercase())
                 }
                 Err(_) => issue_codes.push("display_projection_unavailable"),
+            }
+            match store.reset_classification_counts() {
+                Ok(counts) => state.reset_classifications = counts,
+                Err(_) => issue_codes.push("reset_diagnostics_unavailable"),
             }
             match store
                 .current_compatibility_identity(Some(&detect_codex_version()), None, None)
@@ -715,6 +737,13 @@ fn print_doctor() -> Result<(), Box<dyn std::error::Error>> {
                     failures.push(format!("diagnostics: {error}"));
                 }
             }
+            match store.reset_classification_counts() {
+                Ok(counts) => println!("Reset diagnostics   {counts:?}"),
+                Err(error) => {
+                    println!("Reset diagnostics   unavailable ({error})");
+                    failures.push(format!("reset diagnostics: {error}"));
+                }
+            }
             match store.load_or_recover_display(Utc::now()) {
                 Ok(display) => println!(
                     "Display projection  v{} · {:?}",
@@ -747,6 +776,7 @@ fn print_doctor() -> Result<(), Box<dyn std::error::Error>> {
             println!("Database snapshots  unavailable (state could not be opened)");
             println!("Observations        unavailable (state could not be opened)");
             println!("Diagnostics         unavailable (state could not be opened)");
+            println!("Reset diagnostics   unavailable (state could not be opened)");
             println!("Display projection  unavailable (state could not be opened)");
             println!("Compatibility      unavailable (state could not be opened)");
             failures.push(format!("state: {error}"));

@@ -11,6 +11,7 @@ pub mod ingest;
 pub mod model;
 pub mod persistence;
 pub mod private_fs;
+pub mod reset;
 pub mod setup;
 
 pub use calculate::{AccountingEngine, ApplyOutcome, round_five_hour_percent, round_weekly_points};
@@ -33,6 +34,10 @@ pub use model::{
 };
 pub use persistence::{
     CalibrationKind, ControlEvent, DisplayCacheV1, PersistOutcome, PersistTranscriptOutcome,
-    StateError, StatePaths, StateStore, WindowHistoryEntry,
+    ResetHistoryEntry, StateError, StatePaths, StateStore, WindowHistoryEntry,
+};
+pub use reset::{
+    RESET_TIMESTAMP_JITTER, ResetClassification, ResetDecision, classify_reset,
+    inferred_epoch_start,
 };
 pub use setup::{HistoryImportSummary, HistoryPreview, import_history, preview_history};

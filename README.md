@@ -67,8 +67,28 @@ screen.
 
 ## Install
 
-The project is developed and tested on Ubuntu 25.10. Other Linux versions may
-work, but I have not tested them. You need Rust 1.85 or newer and Codex CLI.
+The supported experimental beta is Ubuntu 25.10 x86_64. Apple Silicon macOS
+artifact and CI work is a preview until the published artifact completes a real
+Mac lifecycle; Intel macOS remains source-preview-only with no release artifact,
+and Windows installation remains unsupported. See the
+[acceptance evidence](docs/ACCEPTANCE.md) and [macOS preview](docs/MACOS.md) for
+the exact boundaries. Codex CLI is required.
+
+For the supported Ubuntu beta, download the x86_64 archive and `SHA256SUMS`
+from the same GitHub release into a clean directory. Verify before extracting:
+
+```bash
+sha256sum -c SHA256SUMS
+tar -xzf codex-usage-watch-VERSION-x86_64-unknown-linux-gnu.tar.gz
+cd codex-usage-watch-VERSION-x86_64-unknown-linux-gnu
+PREFIX="$HOME/.local" INSTALL_HOOKS=1 scripts/install.sh
+```
+
+The archive contains a prebuilt binary, so this path does not require Rust or
+Git. The installer puts `codex-watch` in `~/.local/bin`, adds three Codex hooks,
+does not replace Codex, and does not need `sudo`.
+
+Contributors can instead install from source with Rust 1.85 or newer:
 
 Clone the project and run:
 
@@ -79,10 +99,6 @@ make test
 make lint
 PREFIX="$HOME/.local" INSTALL_HOOKS=1 scripts/install.sh
 ```
-
-The installer builds `codex-watch`, puts it in `~/.local/bin`, and adds three
-Codex hooks. It does not replace your normal Codex installation and does not
-need `sudo`.
 
 Start tracking from now:
 
@@ -120,11 +136,38 @@ codex-watch setup --import --confirm
 The tracker keeps usage metadata, not prompts, responses, tool arguments, or
 source code.
 
+## Backup, upgrade, and rollback
+
+Create an integrity-checked backup before an upgrade:
+
+```bash
+codex-watch backup "$HOME/codex-usage-watch-backup.sqlite3" --confirm
+cp "$HOME/.local/bin/codex-watch" ./codex-watch.previous
+```
+
+Verify and extract the new release, then run its `scripts/install.sh` exactly as
+in the install section. It preserves the state database and unrelated hooks.
+To roll back with the saved verified binary:
+
+```bash
+codex-watch uninstall --confirm
+install -m 0755 ./codex-watch.previous "$HOME/.local/bin/codex-watch"
+"$HOME/.local/bin/codex-watch" install --confirm
+"$HOME/.local/bin/codex-watch" doctor
+```
+
+Rollback changes the executable and owned hook commands only; it does not
+downgrade the database schema. Keep the backup until the older binary has passed
+`doctor` against the retained state.
+
 ## How the estimate works
 
-Codex records how the weekly usage percentage changes. Codex Usage Watch adds
-the positive changes seen during a local five-hour window and converts them
-using its calibration value.
+Codex writes structured five-hour and weekly rate-limit snapshots in
+`token_count.rate_limits`. When a valid 300-minute server window is present,
+Codex Usage Watch uses its real `resets_at` epoch as the local window boundary.
+For older or partial logs that expose only the weekly window, it retains the
+original fallback: start a local five-hour window at the first observation and
+convert positive weekly movement using the calibration value.
 
 - `fresh` means recent usage data was found.
 - `stale` means the newest data is old.
@@ -132,11 +175,41 @@ using its calibration value.
 
 The value is useful as a rough pressure gauge, not as an exact account limit.
 
+### Reset-aware accounting
+
+- A natural five-hour reset closes the old local window and starts the new
+  server epoch. Warning milestones can fire again in that epoch.
+- A natural weekly rollover does not close an unchanged five-hour window. The
+  tracker keeps confirmed pre-reset growth and adds observed post-reset usage.
+- If both the five-hour and weekly epochs restart before their advertised
+  deadlines with matching inferred starts, history labels it `inferred full
+  reset`. This is consistent with an earned reset, but it is not proof that the
+  user selected `/usage` or that any particular server action caused it.
+- Long gaps, missing reset timestamps, and one-sided early changes are labeled
+  `ambiguous reset` instead of being presented with false certainty. Delayed
+  observations from a superseded epoch are ignored.
+
+Detection is delayed until Codex writes the first structured rate-limit
+snapshot after the boundary. `codex-watch history` shows the inferred boundary
+and honest label. Archived local windows, token-activity metadata, calibration
+profiles, and user configuration are retained across server resets.
+
+`codex-watch reset --confirm` is different: it archives only the current local
+tracker window and records a manual control event. It cannot reset the server
+quota and does not erase history.
+
 ## Privacy
 
 Everything stays on your computer. The tracker reads structured rate-limit
 metadata and timestamps from local Codex session files. It does not store your
 prompts, responses, reasoning, tool arguments, command output, or source code.
+
+Reset evidence contains only the previous/new five-hour and weekly reset
+timestamps, the inferred boundary, classification/reason, and the sanitized
+observation identity already used for deduplication. `doctor --json` and the
+optional support bundle expose only aggregate reset-classification counts, not
+raw transcript paths, account identifiers, prompts, responses, or database
+contents.
 
 State is stored under your local data directory in `codex-usage-watch`. You can
 choose another location with `CODEX_USAGE_WATCH_HOME`.
@@ -161,7 +234,11 @@ Run the second command from the cloned project directory.
 
 - The estimate depends on Codex's local session format and may become inaccurate
   if that format changes.
-- macOS and Windows installation have not been tested.
+- A reset cannot be detected until a later structured `token_count` snapshot is
+  written, and ambiguous evidence intentionally remains ambiguous.
+- Apple Silicon macOS has automated build/lifecycle coverage but remains preview
+  until real-Mac published-artifact acceptance succeeds. Intel macOS is
+  source-preview-only with no artifact; Windows installation is unsupported.
 - The `/statusline` and `/status` additions require the separate custom Codex
   build; the normal installation only provides the terminal command and hooks.
 - The local database does not have automatic cleanup yet.

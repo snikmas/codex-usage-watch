@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::model::ObservedRateLimitWindow;
+use crate::reset::same_epoch;
 
 pub const MINIMUM_RECOMMENDATION_SAMPLES: usize = 5;
 pub const VALIDATED_MINIMUM_SAMPLES: usize = 10;
@@ -208,6 +209,7 @@ pub(crate) fn build_report(
     drift_confirmation_count: usize,
 ) -> CalibrationReport {
     observations.sort_by_key(|item| item.observed_at);
+    normalize_reset_jitter(&mut observations);
     let target_identity = observations
         .last()
         .map(|item| item.identity.clone())
@@ -224,7 +226,8 @@ pub(crate) fn build_report(
         .filter(|item| item.weekly.is_some() && item.five_hour.is_none())
         .count();
 
-    let mut grouped: BTreeMap<DateTime<Utc>, Vec<CalibrationObservation>> = BTreeMap::new();
+    let mut grouped: BTreeMap<(DateTime<Utc>, DateTime<Utc>), Vec<CalibrationObservation>> =
+        BTreeMap::new();
     let mut excluded_group_count = 0;
     for observation in observations {
         match observation
@@ -232,15 +235,26 @@ pub(crate) fn build_report(
             .as_ref()
             .and_then(|window| window.resets_at)
         {
-            Some(reset) if observation.weekly.is_some() => {
-                grouped.entry(reset).or_default().push(observation);
+            Some(five_reset) if observation.weekly.is_some() => {
+                if let Some(weekly_reset) = observation
+                    .weekly
+                    .as_ref()
+                    .and_then(|window| window.resets_at)
+                {
+                    grouped
+                        .entry((five_reset, weekly_reset))
+                        .or_default()
+                        .push(observation);
+                } else {
+                    excluded_group_count += 1;
+                }
             }
             _ => excluded_group_count += 1,
         }
     }
 
     let mut samples = Vec::new();
-    for (five_hour_reset_at, mut group) in grouped {
+    for ((five_hour_reset_at, weekly_reset_at), mut group) in grouped {
         group.sort_by_key(|item| item.observed_at);
         let (Some(first), Some(last)) = (group.first(), group.last()) else {
             continue;
@@ -258,18 +272,7 @@ pub(crate) fn build_report(
             excluded_group_count += 1;
             continue;
         };
-        let compatible_resets = group.iter().all(|item| {
-            item.five_hour.as_ref().and_then(|value| value.resets_at) == Some(five_hour_reset_at)
-                && item.weekly.as_ref().and_then(|value| value.resets_at) == first_weekly.resets_at
-        });
-        let Some(weekly_reset_at) = first_weekly.resets_at else {
-            excluded_group_count += 1;
-            continue;
-        };
-        if !compatible_resets {
-            excluded_group_count += 1;
-            continue;
-        }
+        debug_assert_eq!(first_weekly.resets_at, Some(weekly_reset_at));
         let five_delta = last_five.used_percent - first_five.used_percent;
         let weekly_delta = last_weekly.used_percent - first_weekly.used_percent;
         if five_delta <= 0.0
@@ -441,6 +444,27 @@ pub(crate) fn build_report(
         early_report_due: sample_count >= MINIMUM_RECOMMENDATION_SAMPLES,
         weekly_report_due,
         samples,
+    }
+}
+
+fn normalize_reset_jitter(observations: &mut [CalibrationObservation]) {
+    let mut canonical_five = None;
+    let mut canonical_weekly = None;
+    for observation in observations {
+        if let Some(window) = observation.five_hour.as_mut() {
+            if same_epoch(canonical_five, window.resets_at) {
+                window.resets_at = canonical_five;
+            } else {
+                canonical_five = window.resets_at;
+            }
+        }
+        if let Some(window) = observation.weekly.as_mut() {
+            if same_epoch(canonical_weekly, window.resets_at) {
+                window.resets_at = canonical_weekly;
+            } else {
+                canonical_weekly = window.resets_at;
+            }
+        }
     }
 }
 

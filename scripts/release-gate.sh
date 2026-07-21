@@ -43,7 +43,7 @@ test -n "$PACKAGE_ROOT"
 bash "$PACKAGE_ROOT/scripts/check-package-docs.sh" "$PACKAGE_ROOT"
 (cd "$PACKAGE_ROOT" && python3 -m json.tool BUILD-INFO.json >/dev/null)
 (cd "$PACKAGE_ROOT" && python3 -m json.tool SBOM.spdx.json >/dev/null)
-python3 - "$PACKAGE_ROOT" <<'PY'
+python3 - "$PACKAGE_ROOT" "$VERSION" <<'PY'
 import json
 import os
 import pathlib
@@ -52,7 +52,7 @@ import sys
 root = pathlib.Path(sys.argv[1])
 build = json.loads((root / "BUILD-INFO.json").read_text(encoding="utf-8"))
 sbom = json.loads((root / "SBOM.spdx.json").read_text(encoding="utf-8"))
-assert build["version"] == "0.1.0-beta.1"
+assert build["version"] == sys.argv[2]
 if os.environ.get("ALLOW_DIRTY") != "1":
     assert build["source_dirty"] is False
 assert build["sbom"] == "SBOM.spdx.json"

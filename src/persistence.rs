@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::thread;
@@ -27,7 +28,7 @@ mod window_replay;
 
 use window_replay::{insert_snapshots, rebuild_windows};
 
-const SCHEMA_VERSION: i64 = 10;
+const SCHEMA_VERSION: i64 = 11;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(2);
 const HOOK_BUSY_TIMEOUT: Duration = Duration::from_millis(250);
 
@@ -118,6 +119,10 @@ pub struct DisplayCacheV1 {
     pub observed_at: Option<DateTime<Utc>>,
     pub window_started_at: Option<DateTime<Utc>>,
     pub window_ends_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub window_boundary_kind: Option<String>,
+    #[serde(default)]
+    pub window_boundary_at: Option<DateTime<Utc>>,
     pub weekly_points: Option<f64>,
     pub five_hour_estimate_percent: Option<f64>,
     pub five_hour_estimate_left_percent: Option<f64>,
@@ -158,6 +163,17 @@ pub struct WindowHistoryEntry {
     pub lifecycle: String,
     pub calibration_id: String,
     pub calibration_confidence: CalibrationConfidence,
+    pub boundary_kind: String,
+    pub boundary_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResetHistoryEntry {
+    pub observed_at: DateTime<Utc>,
+    pub boundary_at: Option<DateTime<Utc>>,
+    pub classification: crate::reset::ResetClassification,
+    pub label: String,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -269,12 +285,28 @@ impl StateStore {
         Ok(count as usize)
     }
 
+    pub fn reset_classification_counts(&self) -> Result<BTreeMap<String, usize>, StateError> {
+        let mut statement = self.connection.prepare(
+            "SELECT classification, COUNT(*) FROM reset_events
+             GROUP BY classification ORDER BY classification",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        rows.map(|row| {
+            let (classification, count) = row?;
+            Ok((classification, usize::try_from(count).unwrap_or(usize::MAX)))
+        })
+        .collect()
+    }
+
     pub fn recent_windows(&self, limit: usize) -> Result<Vec<WindowHistoryEntry>, StateError> {
         let limit = limit.clamp(1, 100) as i64;
         let mut statement = self.connection.prepare(
             "SELECT started_at, ends_at, latest_observed_at,
                     accumulated_weekly_points, calibration_weekly_points,
-                    lifecycle, calibration_id, calibration_confidence
+                    lifecycle, calibration_id, calibration_confidence,
+                    boundary_kind, boundary_at
              FROM windows ORDER BY started_at DESC LIMIT ?1",
         )?;
         let rows = statement.query_map([limit], |row| {
@@ -289,10 +321,23 @@ impl StateStore {
                 row.get::<_, String>(5)?,
                 row.get::<_, String>(6)?,
                 row.get::<_, String>(7)?,
+                row.get::<_, String>(8)?,
+                row.get::<_, String>(9)?,
             ))
         })?;
         rows.map(|row| {
-            let (start, end, observed, weekly, estimate, lifecycle, id, confidence) = row?;
+            let (
+                start,
+                end,
+                observed,
+                weekly,
+                estimate,
+                lifecycle,
+                id,
+                confidence,
+                boundary_kind,
+                boundary_at,
+            ) = row?;
             Ok(WindowHistoryEntry {
                 started_at: parse_timestamp(&start)?,
                 ends_at: parse_timestamp(&end)?,
@@ -302,6 +347,44 @@ impl StateStore {
                 lifecycle,
                 calibration_id: id,
                 calibration_confidence: CalibrationConfidence::parse(&confidence),
+                boundary_kind,
+                boundary_at: parse_timestamp(&boundary_at)?,
+            })
+        })
+        .collect()
+    }
+
+    pub fn recent_reset_events(&self, limit: usize) -> Result<Vec<ResetHistoryEntry>, StateError> {
+        let limit = limit.clamp(1, 100) as i64;
+        let mut statement = self.connection.prepare(
+            "SELECT observed_at, boundary_at, classification, reason
+             FROM reset_events ORDER BY observed_at DESC, source_file DESC, byte_offset DESC
+             LIMIT ?1",
+        )?;
+        let rows = statement.query_map([limit], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })?;
+        rows.map(|row| {
+            let (observed_at, boundary_at, classification, reason) = row?;
+            let classification = match classification.as_str() {
+                "natural_five_hour" => crate::reset::ResetClassification::NaturalFiveHour,
+                "natural_weekly" => crate::reset::ResetClassification::NaturalWeekly,
+                "inferred_full" => crate::reset::ResetClassification::InferredFull,
+                "ambiguous" => crate::reset::ResetClassification::Ambiguous,
+                "old_epoch" => crate::reset::ResetClassification::OldEpoch,
+                _ => crate::reset::ResetClassification::NoReset,
+            };
+            Ok(ResetHistoryEntry {
+                observed_at: parse_timestamp(&observed_at)?,
+                boundary_at: boundary_at.as_deref().map(parse_timestamp).transpose()?,
+                classification,
+                label: classification.history_label().to_string(),
+                reason,
             })
         })
         .collect()

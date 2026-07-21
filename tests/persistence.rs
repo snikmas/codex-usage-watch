@@ -5,8 +5,8 @@ use std::thread;
 
 use chrono::{DateTime, TimeDelta, Utc};
 use codex_usage_watch::{
-    DisplayCacheV1, IngestOptions, ObservationId, StateStore, TrackerConfig, TranscriptCursor,
-    WeeklySnapshot, WindowStatus, ingest_transcript,
+    DisplayCacheV1, IngestOptions, ObservationId, ResetClassification, StateStore, TrackerConfig,
+    TranscriptCursor, WeeklySnapshot, WindowStatus, ingest_transcript,
 };
 use rusqlite::Connection;
 use tempfile::TempDir;
@@ -37,6 +37,404 @@ fn fixture_snapshots(name: &str) -> Vec<WeeklySnapshot> {
     )
     .unwrap()
     .snapshots
+}
+
+fn ingest_reset_fixture(name: &str, now: &str) -> (TempDir, StateStore, DisplayCacheV1) {
+    let temp = TempDir::new().unwrap();
+    let transcript = temp.path().join(name);
+    fs::copy(fixture(name), &transcript).unwrap();
+    let mut store =
+        StateStore::open_in(temp.path().join("state"), TrackerConfig::default()).unwrap();
+    let outcome = store
+        .ingest_transcript(
+            &transcript,
+            &IngestOptions {
+                now: dt(now),
+                future_tolerance: TimeDelta::minutes(5),
+            },
+        )
+        .unwrap();
+    (temp, store, outcome.persisted.display)
+}
+
+#[test]
+fn server_five_hour_epochs_align_windows_and_restart_weekly_points() {
+    let (_temp, store, display) =
+        ingest_reset_fixture("reset_natural_five_hour.jsonl", "2030-01-01T13:02:00Z");
+    assert_eq!(display.window_started_at, Some(dt("2030-01-01T13:00:00Z")));
+    assert_eq!(display.window_ends_at, Some(dt("2030-01-01T18:00:00Z")));
+    assert_eq!(
+        display.window_boundary_kind.as_deref(),
+        Some("natural_five_hour")
+    );
+    assert_eq!(display.window_boundary_at, Some(dt("2030-01-01T13:00:00Z")));
+    assert_eq!(display.weekly_points, Some(1.0));
+    assert_eq!(display.five_hour_estimate_percent, Some(2.0));
+    assert_eq!(store.recent_windows(10).unwrap().len(), 2);
+    let resets = store.recent_reset_events(10).unwrap();
+    assert_eq!(resets.len(), 1);
+    assert_eq!(
+        resets[0].classification,
+        ResetClassification::NaturalFiveHour
+    );
+}
+
+#[test]
+fn natural_weekly_rollover_stays_inside_the_same_five_hour_window() {
+    let (_temp, store, display) =
+        ingest_reset_fixture("reset_natural_weekly.jsonl", "2030-01-01T12:12:00Z");
+    assert_eq!(display.window_started_at, Some(dt("2030-01-01T10:00:00Z")));
+    assert_eq!(display.window_ends_at, Some(dt("2030-01-01T15:00:00Z")));
+    assert_eq!(display.weekly_points, Some(3.0));
+    assert_eq!(display.weekly_limit_used_percent, Some(2.0));
+    assert_eq!(store.recent_windows(10).unwrap().len(), 1);
+    assert_eq!(
+        store.recent_reset_events(10).unwrap()[0].classification,
+        ResetClassification::NaturalWeekly
+    );
+}
+
+#[test]
+fn early_full_reset_seeds_post_reset_usage_and_rebuilds_identically() {
+    let (_temp, mut store, display) =
+        ingest_reset_fixture("reset_early_full.jsonl", "2030-01-01T12:15:00Z");
+    assert_eq!(display.window_started_at, Some(dt("2030-01-01T12:10:00Z")));
+    assert_eq!(display.window_ends_at, Some(dt("2030-01-01T17:10:00Z")));
+    assert_eq!(
+        display.window_boundary_kind.as_deref(),
+        Some("inferred_full")
+    );
+    assert_eq!(display.weekly_points, Some(5.0));
+    assert_eq!(display.five_hour_estimate_percent, Some(4.0));
+    let events = store.recent_reset_events(10).unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].classification, ResetClassification::InferredFull);
+    assert!(!events[0].reason.contains("user used"));
+
+    let before = fs::read(&store.paths().display).unwrap();
+    fs::remove_file(&store.paths().display).unwrap();
+    let recovered = store
+        .load_or_recover_display(dt("2030-01-01T12:15:00Z"))
+        .unwrap();
+    assert_eq!(recovered, display);
+    assert_eq!(fs::read(&store.paths().display).unwrap(), before);
+}
+
+#[test]
+fn reset_accounting_handles_non_decrease_zero_and_old_concurrent_epochs() {
+    let (_temp, _store, non_decrease) = ingest_reset_fixture(
+        "reset_early_full_non_decrease.jsonl",
+        "2030-01-01T12:10:00Z",
+    );
+    assert_eq!(non_decrease.weekly_points, Some(2.0));
+    assert_eq!(
+        non_decrease.window_boundary_kind.as_deref(),
+        Some("inferred_full")
+    );
+
+    let (_temp, _store, zero) =
+        ingest_reset_fixture("reset_zero_then_growth.jsonl", "2030-01-01T12:15:00Z");
+    assert_eq!(zero.weekly_points, Some(2.0));
+
+    let (_temp, store, interleaved) =
+        ingest_reset_fixture("reset_interleaved_old_epoch.jsonl", "2030-01-01T12:12:00Z");
+    assert_eq!(interleaved.weekly_points, Some(4.0));
+    let events = store.recent_reset_events(10).unwrap();
+    assert!(
+        events
+            .iter()
+            .any(|item| item.classification == ResetClassification::OldEpoch)
+    );
+    let connection = Connection::open(&store.paths().database).unwrap();
+    let ignored: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM snapshots WHERE affects_meter = 0",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(ignored, 1);
+}
+
+#[test]
+fn manual_reset_before_and_after_inferred_reset_is_durable_and_deterministic() {
+    let temp = TempDir::new().unwrap();
+    let transcript = temp.path().join("reset.jsonl");
+    let lines: Vec<_> = fs::read_to_string(fixture("reset_early_full.jsonl"))
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    fs::write(&transcript, format!("{}\n", lines[0])).unwrap();
+    let mut store =
+        StateStore::open_in(temp.path().join("state"), TrackerConfig::default()).unwrap();
+    let options = IngestOptions {
+        now: dt("2030-01-01T12:05:00Z"),
+        future_tolerance: TimeDelta::minutes(20),
+    };
+    store.ingest_transcript(&transcript, &options).unwrap();
+    assert!(
+        store
+            .reset_current_window(dt("2030-01-01T12:05:00Z"))
+            .unwrap()
+    );
+
+    fs::write(
+        &transcript,
+        format!("{}\n{}\n{}\n", lines[0], lines[1], lines[2]),
+    )
+    .unwrap();
+    let outcome = store
+        .ingest_transcript(
+            &transcript,
+            &IngestOptions {
+                now: dt("2030-01-01T12:15:00Z"),
+                future_tolerance: TimeDelta::minutes(5),
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        outcome.persisted.display.window_boundary_kind.as_deref(),
+        Some("inferred_full")
+    );
+    assert_eq!(store.recent_control_events(10).unwrap().len(), 1);
+    assert_eq!(store.recent_reset_events(10).unwrap().len(), 1);
+
+    assert!(
+        store
+            .reset_current_window(dt("2030-01-01T12:16:00Z"))
+            .unwrap()
+    );
+    let duplicate = store
+        .ingest_transcript(
+            &transcript,
+            &IngestOptions {
+                now: dt("2030-01-01T12:17:00Z"),
+                future_tolerance: TimeDelta::minutes(5),
+            },
+        )
+        .unwrap();
+    assert_eq!(duplicate.inserted_observations, 0);
+    assert_eq!(duplicate.persisted.display.status, WindowStatus::Unknown);
+    assert_eq!(store.recent_control_events(10).unwrap().len(), 2);
+    assert_eq!(store.recent_reset_events(10).unwrap().len(), 1);
+}
+
+#[test]
+fn reset_history_survives_backup_restore_and_concurrent_refresh() {
+    let temp = TempDir::new().unwrap();
+    let transcript = temp.path().join("reset.jsonl");
+    fs::copy(fixture("reset_early_full.jsonl"), &transcript).unwrap();
+    let state = temp.path().join("state");
+    let barrier = Arc::new(Barrier::new(2));
+    let handles: Vec<_> = (0..2)
+        .map(|_| {
+            let state = state.clone();
+            let transcript = transcript.clone();
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                let mut store = StateStore::open_in(state, TrackerConfig::default()).unwrap();
+                barrier.wait();
+                store
+                    .ingest_transcript(
+                        &transcript,
+                        &IngestOptions {
+                            now: dt("2030-01-01T12:15:00Z"),
+                            future_tolerance: TimeDelta::minutes(5),
+                        },
+                    )
+                    .unwrap();
+            })
+        })
+        .collect();
+    for handle in handles {
+        handle.join().unwrap();
+    }
+    let store = StateStore::open_in(&state, TrackerConfig::default()).unwrap();
+    assert_eq!(store.recent_reset_events(10).unwrap().len(), 1);
+    assert_eq!(
+        store
+            .reset_classification_counts()
+            .unwrap()
+            .get("inferred_full"),
+        Some(&1)
+    );
+
+    let backup = temp.path().join("backup.sqlite3");
+    store.backup_database(&backup).unwrap();
+    let restored = temp.path().join("restored");
+    fs::create_dir_all(&restored).unwrap();
+    fs::copy(&backup, restored.join("state.sqlite3")).unwrap();
+    let restored = StateStore::open_in(restored, TrackerConfig::default()).unwrap();
+    assert_eq!(restored.recent_reset_events(10).unwrap().len(), 1);
+    assert_eq!(
+        restored.recent_reset_events(10).unwrap()[0].classification,
+        ResetClassification::InferredFull
+    );
+}
+
+#[test]
+fn ambiguous_missing_long_gap_and_jitter_cases_fail_open_without_overlap() {
+    let cases = [
+        ("reset_ambiguous_five_only.jsonl", "2030-01-01T12:10:00Z"),
+        ("reset_missing_five_hour.jsonl", "2030-01-01T12:05:00Z"),
+        ("reset_long_gap.jsonl", "2030-01-01T16:00:00Z"),
+        ("reset_timestamp_jitter.jsonl", "2030-01-01T12:01:00Z"),
+    ];
+    for (fixture_name, now) in cases {
+        let (_temp, store, display) = ingest_reset_fixture(fixture_name, now);
+        let windows = store.recent_windows(100).unwrap();
+        for pair in windows.iter().rev().collect::<Vec<_>>().windows(2) {
+            assert!(pair[0].ends_at <= pair[1].started_at, "{fixture_name}");
+        }
+        match fixture_name {
+            "reset_ambiguous_five_only.jsonl" => {
+                assert_eq!(display.window_boundary_kind.as_deref(), Some("ambiguous"));
+                assert_eq!(
+                    store.recent_reset_events(10).unwrap()[0].classification,
+                    ResetClassification::Ambiguous
+                );
+            }
+            "reset_missing_five_hour.jsonl" => {
+                assert_eq!(display.window_started_at, Some(dt("2030-01-01T12:00:00Z")));
+                assert_eq!(display.window_ends_at, Some(dt("2030-01-01T17:00:00Z")));
+                assert!(store.recent_reset_events(10).unwrap().is_empty());
+            }
+            "reset_long_gap.jsonl" => {
+                assert_eq!(
+                    store.recent_reset_events(10).unwrap()[0].classification,
+                    ResetClassification::NaturalFiveHour
+                );
+            }
+            "reset_timestamp_jitter.jsonl" => {
+                assert_eq!(windows.len(), 1);
+                assert!(store.recent_reset_events(10).unwrap().is_empty());
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[test]
+fn later_paired_data_realigns_earlier_weekly_only_observations() {
+    let (_temp, store, display) =
+        ingest_reset_fixture("reset_weekly_then_paired.jsonl", "2030-01-01T12:05:00Z");
+    assert_eq!(display.window_started_at, Some(dt("2030-01-01T10:00:00Z")));
+    assert_eq!(display.window_ends_at, Some(dt("2030-01-01T15:00:00Z")));
+    assert_eq!(
+        display.window_boundary_kind.as_deref(),
+        Some("server_epoch")
+    );
+    assert_eq!(display.weekly_points, Some(2.0));
+    assert_eq!(display.five_hour_estimate_percent, Some(7.0));
+    assert_eq!(store.recent_windows(10).unwrap().len(), 1);
+}
+
+#[test]
+fn warning_milestones_can_fire_again_in_a_new_server_epoch() {
+    let temp = TempDir::new().unwrap();
+    let transcript = temp.path().join("reset.jsonl");
+    fs::copy(fixture("reset_natural_five_hour.jsonl"), &transcript).unwrap();
+    let config = TrackerConfig::new(
+        15.8,
+        TimeDelta::hours(5),
+        TimeDelta::minutes(15),
+        vec![5],
+        10,
+        None,
+    )
+    .unwrap();
+    let mut store = StateStore::open_in(temp.path().join("state"), config).unwrap();
+    let outcome = store
+        .ingest_transcript(
+            &transcript,
+            &IngestOptions {
+                now: dt("2030-01-01T13:02:00Z"),
+                future_tolerance: TimeDelta::minutes(5),
+            },
+        )
+        .unwrap();
+    assert_eq!(outcome.persisted.newly_emitted_warnings, vec![5, 5]);
+    let duplicate = store
+        .ingest_transcript(
+            &transcript,
+            &IngestOptions {
+                now: dt("2030-01-01T13:03:00Z"),
+                future_tolerance: TimeDelta::minutes(5),
+            },
+        )
+        .unwrap();
+    assert!(duplicate.persisted.newly_emitted_warnings.is_empty());
+}
+
+#[test]
+fn incremental_and_full_replay_write_byte_equivalent_reset_projections() {
+    for fixture_name in [
+        "reset_natural_five_hour.jsonl",
+        "reset_natural_weekly.jsonl",
+        "reset_early_full.jsonl",
+        "reset_early_full_non_decrease.jsonl",
+        "reset_zero_then_growth.jsonl",
+        "reset_interleaved_old_epoch.jsonl",
+        "reset_ambiguous_five_only.jsonl",
+        "reset_missing_five_hour.jsonl",
+        "reset_long_gap.jsonl",
+        "reset_timestamp_jitter.jsonl",
+        "reset_weekly_then_paired.jsonl",
+    ] {
+        let temp = TempDir::new().unwrap();
+        let full_path = temp.path().join("full.jsonl");
+        let incremental_path = temp.path().join("incremental.jsonl");
+        let contents = fs::read_to_string(fixture(fixture_name)).unwrap();
+        fs::write(&full_path, &contents).unwrap();
+        fs::write(&incremental_path, "").unwrap();
+        let now = dt("2030-01-09T00:00:00Z");
+        let options = IngestOptions {
+            now,
+            future_tolerance: TimeDelta::minutes(5),
+        };
+        let mut full =
+            StateStore::open_in(temp.path().join("full-state"), TrackerConfig::default()).unwrap();
+        full.ingest_transcript(&full_path, &options).unwrap();
+
+        let mut incremental = StateStore::open_in(
+            temp.path().join("incremental-state"),
+            TrackerConfig::default(),
+        )
+        .unwrap();
+        let mut prefix = String::new();
+        for line in contents.lines() {
+            prefix.push_str(line);
+            prefix.push('\n');
+            fs::write(&incremental_path, &prefix).unwrap();
+            incremental
+                .ingest_transcript(&incremental_path, &options)
+                .unwrap();
+        }
+        assert_eq!(
+            fs::read(&full.paths().display).unwrap(),
+            fs::read(&incremental.paths().display).unwrap(),
+            "{fixture_name}"
+        );
+        assert_eq!(
+            full.recent_windows(100).unwrap(),
+            incremental.recent_windows(100).unwrap(),
+            "{fixture_name}"
+        );
+        let full_events = full.recent_reset_events(100).unwrap();
+        let incremental_events = incremental.recent_reset_events(100).unwrap();
+        assert_eq!(
+            full_events
+                .iter()
+                .map(|item| (&item.classification, item.boundary_at))
+                .collect::<Vec<_>>(),
+            incremental_events
+                .iter()
+                .map(|item| (&item.classification, item.boundary_at))
+                .collect::<Vec<_>>(),
+            "{fixture_name}"
+        );
+    }
 }
 
 fn snapshot(source: &str, offset: u64, at: &str, used: f64) -> WeeklySnapshot {
@@ -113,7 +511,7 @@ fn sqlite_replay_ignores_one_second_reset_jitter_and_older_epochs() {
 fn migration_creates_the_stage_three_schema_and_wal_database() {
     let temp = TempDir::new().unwrap();
     let store = StateStore::open_in(temp.path(), TrackerConfig::default()).unwrap();
-    assert_eq!(store.schema_version().unwrap(), 10);
+    assert_eq!(store.schema_version().unwrap(), 11);
 
     let connection = Connection::open(&store.paths().database).unwrap();
     let tables: Vec<String> = connection
@@ -133,6 +531,7 @@ fn migration_creates_the_stage_three_schema_and_wal_database() {
         "diagnostic_events",
         "observed_rate_limit_windows",
         "rate_limit_observations",
+        "reset_events",
         "schema_migrations",
         "snapshots",
         "transcript_cursors",
@@ -247,7 +646,7 @@ fn schema_v1_migrates_without_losing_snapshots_or_windows() {
     drop(connection);
 
     let store = StateStore::open_in(temp.path(), TrackerConfig::default()).unwrap();
-    assert_eq!(store.schema_version().unwrap(), 10);
+    assert_eq!(store.schema_version().unwrap(), 11);
     assert_eq!(store.snapshot_count().unwrap(), 1);
     let connection = Connection::open(&database).unwrap();
     let window: (f64, f64) = connection
@@ -435,7 +834,7 @@ fn display_projection_has_versioned_used_left_freshness_and_calibration_fields()
         .unwrap();
 
     let display = outcome.display;
-    assert_eq!(display.schema_version, 1);
+    assert_eq!(display.schema_version, 2);
     assert_eq!(display.status, WindowStatus::Fresh);
     assert!(!display.stale);
     assert_eq!(display.data_age_seconds, Some(300));
@@ -553,7 +952,7 @@ fn missing_or_malformed_display_is_recovered_from_sqlite() {
     let regenerated = store
         .load_or_recover_display(dt("2030-01-01T12:17:00Z"))
         .unwrap();
-    assert_eq!(regenerated.schema_version, 1);
+    assert_eq!(regenerated.schema_version, 2);
     assert_eq!(regenerated.weekly_points, Some(4.0));
 }
 
