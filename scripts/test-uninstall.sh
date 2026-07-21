@@ -6,7 +6,7 @@ TEMP="$(mktemp -d)"
 trap 'rm -rf "$TEMP"' EXIT
 
 cargo build --manifest-path "$ROOT/Cargo.toml" --locked
-TEST_BIN="$ROOT/target/debug/codex-5h"
+TEST_BIN="$ROOT/target/debug/codex-watch"
 
 assert_hook_state() {
   python3 - "$1" "$2" "$3" <<'PY'
@@ -15,7 +15,7 @@ import sys
 
 data = json.load(open(sys.argv[1], encoding="utf-8"))
 encoded = json.dumps(data)
-assert ("codex-5h" in encoded) == (sys.argv[2] == "owned"), encoded
+assert ("codex-watch" in encoded) == (sys.argv[2] == "owned"), encoded
 assert ("unrelated-hook" in encoded) == (sys.argv[3] == "unrelated"), encoded
 PY
 }
@@ -30,7 +30,7 @@ printf '%s\n' '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"
 CODEX_USAGE_WATCH_BINARY="$TEST_BIN" PREFIX="$PREFIX" CODEX_HOME="$CODEX_HOME" \
   CODEX_USAGE_WATCH_HOME="$STATE" INSTALL_HOOKS=1 "$ROOT/scripts/install.sh" >/dev/null
 PREFIX="$PREFIX" CODEX_HOME="$CODEX_HOME" "$ROOT/scripts/uninstall.sh" --confirm >/dev/null
-test ! -e "$PREFIX/bin/codex-5h"
+test ! -e "$PREFIX/bin/codex-watch"
 assert_hook_state "$CODEX_HOME/hooks.json" absent unrelated
 PREFIX="$PREFIX" CODEX_HOME="$CODEX_HOME" "$ROOT/scripts/uninstall.sh" --confirm >/dev/null
 assert_hook_state "$CODEX_HOME/hooks.json" absent unrelated
@@ -40,10 +40,10 @@ assert_hook_state "$CODEX_HOME/hooks.json" absent unrelated
 MISSING_PREFIX="$TEMP/missing-prefix"
 MISSING_HOME="$TEMP/missing-home"
 mkdir -p "$MISSING_PREFIX/bin" "$MISSING_HOME"
-cp "$TEST_BIN" "$MISSING_PREFIX/bin/codex-5h"
+cp "$TEST_BIN" "$MISSING_PREFIX/bin/codex-watch"
 PREFIX="$MISSING_PREFIX" CODEX_HOME="$MISSING_HOME" \
-  "$MISSING_PREFIX/bin/codex-5h" install --confirm >/dev/null
-rm "$MISSING_PREFIX/bin/codex-5h"
+  "$MISSING_PREFIX/bin/codex-watch" install --confirm >/dev/null
+rm "$MISSING_PREFIX/bin/codex-watch"
 set +e
 missing_output="$(PREFIX="$MISSING_PREFIX" CODEX_HOME="$MISSING_HOME" \
   "$ROOT/scripts/uninstall.sh" --confirm 2>&1)"
@@ -59,7 +59,7 @@ assert_hook_state "$MISSING_HOME/hooks.json" owned absent
 BUNDLE="$TEMP/bundle"
 mkdir -p "$BUNDLE/scripts"
 cp "$ROOT/scripts/uninstall.sh" "$BUNDLE/scripts/uninstall.sh"
-cp "$TEST_BIN" "$BUNDLE/codex-5h"
+cp "$TEST_BIN" "$BUNDLE/codex-watch"
 printf '{}\n' >"$BUNDLE/BUILD-INFO.json"
 printf '{}\n' >"$BUNDLE/SBOM.spdx.json"
 PREFIX="$MISSING_PREFIX" CODEX_HOME="$MISSING_HOME" \

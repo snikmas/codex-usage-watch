@@ -8,7 +8,7 @@ use serde_json::Value;
 use std::os::unix::fs::PermissionsExt;
 
 fn command(state: &tempfile::TempDir, codex_home: &tempfile::TempDir) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_codex-5h"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_codex-watch"));
     command
         .env("CODEX_USAGE_WATCH_HOME", state.path())
         .env("CODEX_HOME", codex_home.path());
@@ -18,14 +18,14 @@ fn command(state: &tempfile::TempDir, codex_home: &tempfile::TempDir) -> Command
 #[test]
 fn help_version_and_invalid_arguments_have_documented_exit_behavior() {
     for flag in ["--help", "-h", "--version", "-V"] {
-        let output = Command::new(env!("CARGO_BIN_EXE_codex-5h"))
+        let output = Command::new(env!("CARGO_BIN_EXE_codex-watch"))
             .arg(flag)
             .output()
             .unwrap();
         assert!(output.status.success(), "{flag}");
         assert!(!output.stdout.is_empty());
     }
-    let invalid = Command::new(env!("CARGO_BIN_EXE_codex-5h"))
+    let invalid = Command::new(env!("CARGO_BIN_EXE_codex-watch"))
         .arg("not-a-command")
         .output()
         .unwrap();
@@ -46,14 +46,14 @@ fn help_version_and_invalid_arguments_have_documented_exit_behavior() {
         "uninstall",
         "hook",
     ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_codex-5h"))
+        let output = Command::new(env!("CARGO_BIN_EXE_codex-watch"))
             .args([subcommand, "--help"])
             .output()
             .unwrap();
         assert!(output.status.success(), "{subcommand}");
         assert!(String::from_utf8_lossy(&output.stdout).contains("USAGE:"));
     }
-    let nested = Command::new(env!("CARGO_BIN_EXE_codex-5h"))
+    let nested = Command::new(env!("CARGO_BIN_EXE_codex-watch"))
         .args(["calibration", "apply", "--help"])
         .output()
         .unwrap();

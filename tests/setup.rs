@@ -23,7 +23,7 @@ fn preview_and_decline_do_not_read_or_create_usage_state() {
     let home = TempDir::new().unwrap();
     history_fixture(&home);
     let state = home.path().join("state");
-    let preview = Command::new(env!("CARGO_BIN_EXE_codex-5h"))
+    let preview = Command::new(env!("CARGO_BIN_EXE_codex-watch"))
         .args(["setup", "--preview"])
         .env("CODEX_HOME", home.path())
         .env("CODEX_USAGE_WATCH_HOME", &state)
@@ -36,7 +36,7 @@ fn preview_and_decline_do_not_read_or_create_usage_state() {
     assert!(!stdout.contains("PRIVATE PROMPT"));
     assert!(!state.exists());
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_codex-5h"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_codex-watch"))
         .arg("setup")
         .env("CODEX_HOME", home.path())
         .env("CODEX_USAGE_WATCH_HOME", &state)
@@ -60,7 +60,7 @@ fn consented_weekly_only_import_retains_only_structured_metadata() {
     let home = TempDir::new().unwrap();
     history_fixture(&home);
     let state = home.path().join("state");
-    let output = Command::new(env!("CARGO_BIN_EXE_codex-5h"))
+    let output = Command::new(env!("CARGO_BIN_EXE_codex-watch"))
         .args(["setup", "--import", "--confirm"])
         .env("CODEX_HOME", home.path())
         .env("CODEX_USAGE_WATCH_HOME", &state)

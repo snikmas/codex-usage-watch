@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "codex-5h hook session-start",
+            "command": "codex-watch hook session-start",
             "timeout": 5,
             "statusMessage": "Updating local usage watch"
           }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "codex-5h hook user-prompt-submit",
+            "command": "codex-watch hook user-prompt-submit",
             "timeout": 5,
             "statusMessage": "Updating local usage watch"
           }
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "codex-5h hook stop",
+            "command": "codex-watch hook stop",
             "timeout": 5,
             "statusMessage": "Saving local usage watch"
           }

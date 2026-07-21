@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PREFIX="${PREFIX:-$HOME/.local}"
-BIN="$PREFIX/bin/codex-5h"
+BIN="$PREFIX/bin/codex-watch"
 
 test -x "$BIN"
 "$BIN" --help >/dev/null

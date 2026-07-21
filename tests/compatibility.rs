@@ -257,7 +257,7 @@ fn release_metadata_is_allowlisted_and_cached_for_a_day() {
 #[test]
 fn doctor_compat_runs_outside_hooks_and_never_blocks() {
     let temp = TempDir::new().unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_codex-5h"))
+    let output = Command::new(env!("CARGO_BIN_EXE_codex-watch"))
         .args(["doctor", "--compat"])
         .env("CODEX_USAGE_WATCH_HOME", temp.path())
         .env("CODEX_VERSION", "0.146.0")

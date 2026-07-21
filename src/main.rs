@@ -21,7 +21,7 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             let (code, category) = classify_error(error.as_ref());
-            eprintln!("codex-5h {category}: {error}");
+            eprintln!("codex-watch {category}: {error}");
             ExitCode::from(code)
         }
     }
@@ -83,7 +83,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         [] => print_help(),
         [flag] if flag == "--help" || flag == "-h" || flag == "help" => print_help(),
         [flag] if flag == "--version" || flag == "-V" || flag == "version" => {
-            println!("codex-5h {}", env!("CARGO_PKG_VERSION"));
+            println!("codex-watch {}", env!("CARGO_PKG_VERSION"));
         }
         [command, flag] if flag == "--help" || flag == "-h" => {
             print_command_help(command)?;
@@ -105,7 +105,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Err(error) => {
                     // Hooks always fail open. Diagnostics stay off stdout because
                     // stdout is a strict JSON protocol surface.
-                    eprintln!("codex-5h hook diagnostic: {error}");
+                    eprintln!("codex-watch hook diagnostic: {error}");
                     println!("{FAIL_OPEN_JSON}");
                 }
             }
@@ -185,7 +185,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             return Err(usage_error(
-                "invalid arguments; run codex-5h --help or codex-5h COMMAND --help",
+                "invalid arguments; run codex-watch --help or codex-watch COMMAND --help",
             ));
         }
     }
@@ -194,7 +194,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn print_help() {
     println!(
-        "Codex Usage Watch {}\n\nLocal, non-blocking five-hour usage awareness. Estimates are not official quota or billing data.\n\nUSAGE:\n  codex-5h <COMMAND> [OPTIONS]\n\nCOMMANDS:\n  setup [--preview|--skip-import|--import --confirm]  Consent-first history setup\n  status [--json]                                    Show the current projection\n  refresh [--transcript PATH]                        Bounded refresh (at most 8 recent files)\n  history [--json]                                   Show recent windows and control events\n  analyze [--json]                                   Inspect calibration evidence\n  reset --confirm                                    Archive the current local window\n  doctor [--json|--compat [--refresh-releases]]      Validate installation and compatibility\n  doctor --support-bundle FILE --confirm             Write privacy-sanitized diagnostics\n  calibration apply POINTS --confirm                 Apply reviewed calibration to future windows\n  backup DESTINATION.sqlite3 --confirm               Create an integrity-checked database backup\n  install --confirm | uninstall --confirm            Add or remove only this tool's hooks\n\nOPTIONS:\n  -h, --help       Print help and exit 0\n  -V, --version    Print version and exit 0\n\nEXAMPLES:\n  codex-5h setup --preview\n  codex-5h status --json\n  codex-5h refresh\n  codex-5h doctor --json\n\nEXIT STATUS:\n  0 success\n  2 invalid command or arguments\n  3 invalid configuration\n  4 required data is unavailable\n  5 runtime or I/O failure",
+        "Codex Usage Watch {}\n\nLocal, non-blocking five-hour usage awareness. Estimates are not official quota or billing data.\n\nUSAGE:\n  codex-watch <COMMAND> [OPTIONS]\n\nCOMMANDS:\n  setup [--preview|--skip-import|--import --confirm]  Consent-first history setup\n  status [--json]                                    Show the current projection\n  refresh [--transcript PATH]                        Bounded refresh (at most 8 recent files)\n  history [--json]                                   Show recent windows and control events\n  analyze [--json]                                   Inspect calibration evidence\n  reset --confirm                                    Archive the current local window\n  doctor [--json|--compat [--refresh-releases]]      Validate installation and compatibility\n  doctor --support-bundle FILE --confirm             Write privacy-sanitized diagnostics\n  calibration apply POINTS --confirm                 Apply reviewed calibration to future windows\n  backup DESTINATION.sqlite3 --confirm               Create an integrity-checked database backup\n  install --confirm | uninstall --confirm            Add or remove only this tool's hooks\n\nOPTIONS:\n  -h, --help       Print help and exit 0\n  -V, --version    Print version and exit 0\n\nEXAMPLES:\n  codex-watch setup --preview\n  codex-watch status --json\n  codex-watch refresh\n  codex-watch doctor --json\n\nEXIT STATUS:\n  0 success\n  2 invalid command or arguments\n  3 invalid configuration\n  4 required data is unavailable\n  5 runtime or I/O failure",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -202,64 +202,64 @@ fn print_help() {
 fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
     let (usage, description) = match command {
         "setup" => (
-            "codex-5h setup [--preview|--skip-import|--import --confirm]",
+            "codex-watch setup [--preview|--skip-import|--import --confirm]",
             "Preview and optionally import privacy-filtered historical rate-limit metadata.",
         ),
         "status" => (
-            "codex-5h status [--json]",
+            "codex-watch status [--json]",
             "Show the current estimate, weekly cost, freshness, and calibration.",
         ),
         "refresh" => (
-            "codex-5h refresh [--transcript PATH]",
+            "codex-watch refresh [--transcript PATH]",
             "Refresh one explicit transcript or at most eight recent transcripts.",
         ),
         "history" => (
-            "codex-5h history [--json]",
+            "codex-watch history [--json]",
             "List recent local windows and control events.",
         ),
         "analyze" => (
-            "codex-5h analyze [--json]",
+            "codex-watch analyze [--json]",
             "Report calibration evidence, confidence, spread, and drift.",
         ),
         "reset" => (
-            "codex-5h reset --confirm",
+            "codex-watch reset --confirm",
             "Archive the current local window and record the control action.",
         ),
         "doctor" => (
-            "codex-5h doctor [--json|--compat [--refresh-releases]|--support-bundle FILE --confirm]",
+            "codex-watch doctor [--json|--compat [--refresh-releases]|--support-bundle FILE --confirm]",
             "Report installation checks; JSON and support bundles omit local paths and identifiers.",
         ),
         "calibration" => (
-            "codex-5h calibration apply WEEKLY_POINTS --confirm",
+            "codex-watch calibration apply WEEKLY_POINTS --confirm",
             "Apply a reviewed exact-identity calibration to future windows only.",
         ),
         "backup" => (
-            "codex-5h backup DESTINATION.sqlite3 --confirm",
+            "codex-watch backup DESTINATION.sqlite3 --confirm",
             "Create a consistent SQLite backup; the packaged helper also checks integrity.",
         ),
         "install" => (
-            "codex-5h install --confirm",
+            "codex-watch install --confirm",
             "Install three absolute-path Codex hook definitions, then review them in /hooks.",
         ),
         "uninstall" => (
-            "codex-5h uninstall --confirm",
+            "codex-watch uninstall --confirm",
             "Remove only Codex Usage Watch hook handlers and preserve state.",
         ),
         "hook" => (
-            "codex-5h hook <session-start|user-prompt-submit|stop>",
+            "codex-watch hook <session-start|user-prompt-submit|stop>",
             "Codex lifecycle protocol adapter; always fails open with JSON stdout.",
         ),
         _ => return Err(usage_error(format!("unknown command {command:?}"))),
     };
     println!(
-        "{description}\n\nUSAGE:\n  {usage}\n\nRun codex-5h --help for all commands and exit-status meanings."
+        "{description}\n\nUSAGE:\n  {usage}\n\nRun codex-watch --help for all commands and exit-status meanings."
     );
     Ok(())
 }
 
 fn print_calibration_apply_help() {
     println!(
-        "Apply a reviewed exact-identity calibration to future windows only.\n\nUSAGE:\n  codex-5h calibration apply WEEKLY_POINTS --confirm\n\nHistorical windows keep their original calibration ID and value."
+        "Apply a reviewed exact-identity calibration to future windows only.\n\nUSAGE:\n  codex-watch calibration apply WEEKLY_POINTS --confirm\n\nHistorical windows keep their original calibration ID and value."
     );
 }
 
@@ -268,7 +268,7 @@ fn print_hook_trust_next_steps() {
         "Required next step  start or restart Codex, open /hooks, inspect the source and all three commands, trust them, then start a fresh session"
     );
     println!(
-        "Trust status        codex-5h can validate configuration and paths; trust is confirmed only inside Codex"
+        "Trust status        codex-watch can validate configuration and paths; trust is confirmed only inside Codex"
     );
 }
 

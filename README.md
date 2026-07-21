@@ -1,150 +1,175 @@
 # Codex Usage Watch
 
-> **Experimental beta candidate.** Tested on Ubuntu 25.10 x86_64 with the
-> checksummed standalone archive and Codex CLI 0.144.4.
-> Other Linux distributions may work, but they have not been verified. macOS is
-> preview-only, and Windows installation is unsupported.
-
-Codex Usage Watch is a private, local pressure gauge for Codex usage. It turns
-the weekly percentage already recorded by Codex into an estimate of one
-historical five-hour allowance. It never blocks a prompt.
-
-The number can be wrong. It is a local estimate, not official OpenAI quota,
-billing, or account data. Use it for awareness, not as proof of what you used or
-what you will be charged.
-
-You are welcome to try the experimental beta in the tested environment and
-report anything confusing or broken. Use a [bug report](https://github.com/snikmas/codex-usage-watch/issues/new?template=bug.yml),
-a [compatibility report](https://github.com/snikmas/codex-usage-watch/issues/new?template=compatibility.yml),
-or [private vulnerability reporting](https://github.com/snikmas/codex-usage-watch/security/advisories/new).
-Before sharing diagnostics, review them and never attach Codex transcripts,
-prompts, source code, `display.json`, `state.sqlite3`, or private local paths.
-
-## What you will see
+A small personal project that estimates how much of the old five-hour Codex
+allowance you have used. It reads the weekly percentage already recorded by
+Codex and turns the change into a local estimate:
 
 ```text
-5 hour estimate: 32% | 5.1 weekly points
+5h est 158% · week +25.0%
 ```
 
-- `fresh` means a recent supported observation was found.
-- `stale` means the last observation is older than the freshness window.
-- `unknown` means there is not enough compatible data yet. It does not mean 0%.
-- Values above 100% remain visible and Codex continues normally.
+- `5h est 158%` means about 1.58 times the old five-hour allowance.
+- `week +25.0%` means weekly usage increased by 25 percentage points during
+  this five-hour window.
+- The estimate can go above 100%. Nothing is blocked.
 
-The optional native footer is a separate development preview and is not in the
-beta archive. The supported build does not add a permanent Codex status-line
-item: use `codex-5h status` for an always-available reading. Trusted lifecycle
-hooks show a session-start message and newly crossed warning thresholds; the
-`Stop` hook is intentionally silent.
+This is only a local estimate, not official OpenAI usage or billing data.
 
-## Install the beta
+## Four ways to see the output
 
-There is no published beta artifact yet. Until the GitHub prerelease appears,
-the recommended public action is to wait; source installation is for
-contributors and is described separately below.
-
-When `0.1.0-beta.1` is published, download its Ubuntu 25.10 x86_64 standalone
-archive and `SHA256SUMS` into a new empty directory. Then run:
+### 1. Terminal
 
 ```bash
-sha256sum -c SHA256SUMS
-tar -xzf codex-usage-watch-0.1.0-beta.1-x86_64-unknown-linux-gnu.tar.gz
-cd codex-usage-watch-0.1.0-beta.1-x86_64-unknown-linux-gnu
+codex-watch status
+```
+
+![codex-watch status in a terminal](docs/images/terminal-status.png)
+
+Other useful commands:
+
+```bash
+codex-watch refresh     # look for newer usage data
+codex-watch history     # show recent five-hour windows
+codex-watch analyze     # show how the estimate was calculated
+codex-watch doctor      # check the local setup
+```
+
+### 2. Codex status line
+
+```text
+5h est 158% · week +25.0%
+```
+
+![Codex Usage Watch in the Codex status line](docs/images/statusline.png)
+
+The normal Codex CLI cannot add this project to `/statusline`. The screenshot
+uses a small custom Codex build with the `local-five-hour-limit` item. This part
+is optional and is not installed by the setup below.
+
+### 3. Codex `/status`
+
+![Codex Usage Watch details in the custom Codex status screen](docs/images/codex-status.png)
+
+The same custom build adds **Five-hour estimate** and **Weekly cost** to
+`/status`. The normal Codex CLI does not show these rows, so use
+`codex-watch status` for the same details.
+
+### 4. Hook messages inside Codex
+
+![Automatic Codex Usage Watch hook notice](docs/images/hook-notice.png)
+
+The hooks show the current estimate when Codex starts and a short message when
+you cross a warning level. The `Stop` hook saves the newest observation
+silently. If a hook fails, Codex continues normally.
+
+`/hooks` is only where you review and trust the hooks; it is not another status
+screen.
+
+## Install
+
+The project is developed and tested on Ubuntu 25.10. Other Linux versions may
+work, but I have not tested them. You need Rust 1.85 or newer and Codex CLI.
+
+Clone the project and run:
+
+```bash
+git clone https://github.com/snikmas/codex-usage-watch.git
+cd codex-usage-watch
+make test
+make lint
 PREFIX="$HOME/.local" INSTALL_HOOKS=1 scripts/install.sh
-PREFIX="$HOME/.local" scripts/verify-install.sh
 ```
 
-The target name in the archive filename is a build identifier, not a promise
-that every system using that target is compatible.
+The installer builds `codex-watch`, puts it in `~/.local/bin`, and adds three
+Codex hooks. It does not replace your normal Codex installation and does not
+need `sudo`.
 
-After installation:
-
-1. Start or restart Codex.
-2. Open `/hooks`.
-3. Review the `SessionStart`, `UserPromptSubmit`, and `Stop` definitions. Each
-   must call the expected absolute `codex-5h` path with a five-second timeout.
-4. Trust all three definitions and start a fresh Codex session.
-5. Run:
+Start tracking from now:
 
 ```bash
-"$HOME/.local/bin/codex-5h" setup --skip-import
-"$HOME/.local/bin/codex-5h" status
-"$HOME/.local/bin/codex-5h" doctor
+"$HOME/.local/bin/codex-watch" setup --skip-import
+"$HOME/.local/bin/codex-watch" status
 ```
 
-History import is optional. `setup --preview` reads filenames and metadata only;
-transcript content is parsed only after explicit import consent.
+Then restart Codex, open `/hooks`, review and trust `SessionStart`,
+`UserPromptSubmit`, and `Stop`, and start a new Codex session. You can check the
+setup with:
 
-For checksum details, backup/restore, upgrades, and recovery, use the complete
-[installation guide](docs/INSTALL.md).
+```bash
+"$HOME/.local/bin/codex-watch" doctor
+```
+
+If `codex-watch` is not found in a new terminal, either use the full path above
+or add `~/.local/bin` to your `PATH`.
+
+## Optional history import
+
+By default, `setup --skip-import` starts from now and does not read old
+sessions. To preview the older session files it can use:
+
+```bash
+codex-watch setup --preview
+```
+
+To import their usage metadata:
+
+```bash
+codex-watch setup --import --confirm
+```
+
+The tracker keeps usage metadata, not prompts, responses, tool arguments, or
+source code.
+
+## How the estimate works
+
+Codex records how the weekly usage percentage changes. Codex Usage Watch adds
+the positive changes seen during a local five-hour window and converts them
+using its calibration value.
+
+- `fresh` means recent usage data was found.
+- `stale` means the newest data is old.
+- `unknown` means there is not enough compatible data yet; it does not mean 0%.
+
+The value is useful as a rough pressure gauge, not as an exact account limit.
+
+## Privacy
+
+Everything stays on your computer. The tracker reads structured rate-limit
+metadata and timestamps from local Codex session files. It does not store your
+prompts, responses, reasoning, tool arguments, command output, or source code.
+
+State is stored under your local data directory in `codex-usage-watch`. You can
+choose another location with `CODEX_USAGE_WATCH_HOME`.
 
 ## Remove it
 
-From the extracted, checksum-verified archive directory:
+Remove only the hooks and keep the command and saved data:
+
+```bash
+codex-watch uninstall --confirm
+```
+
+Remove the hooks and installed command while keeping the saved database:
 
 ```bash
 PREFIX="$HOME/.local" scripts/uninstall.sh --confirm
 ```
 
-This removes only Codex Usage Watch hooks and its installed binary. It preserves
-the local database. If the installed binary is already missing, the archive's
-bundled binary safely removes the hooks. Without either binary, the script stops
-with recovery steps instead of claiming that cleanup succeeded.
+Run the second command from the cloned project directory.
 
-## Privacy and help
+## Limitations
 
-The tracker reads structured rate-limit metadata and timestamps. It does not
-retain prompts, responses, tool arguments, or source code. Its SQLite database
-and generated reports stay on this computer unless you choose to share a
-reviewed support bundle.
+- The estimate depends on Codex's local session format and may become inaccurate
+  if that format changes.
+- macOS and Windows installation have not been tested.
+- The `/statusline` and `/status` additions require the separate custom Codex
+  build; the normal installation only provides the terminal command and hooks.
+- The local database does not have automatic cleanup yet.
 
-```bash
-codex-5h doctor --json
-codex-5h doctor --support-bundle ./codex-usage-watch-support.json --confirm
-```
+## Contributing
 
-Review any output before sharing it. See [privacy](docs/PRIVACY.md),
-[support](docs/SUPPORT.md), and [security reporting](SECURITY.md).
+This is a personal project, but small issues and pull requests are welcome. Run
+`make test` and `make lint` before submitting a change, and use synthetic test
+data instead of real Codex transcripts.
 
-## Source checkout for contributors
-
-Source builds require Rust 1.85 or newer, Cargo, Bash, Python 3, and the same
-Ubuntu 25.10 x86_64 environment for the currently verified installation path.
-
-```bash
-make test
-make lint
-PREFIX="$HOME/.local" scripts/install.sh
-```
-
-Source installation is not the recommended beta route. Contributors should run
-the full acceptance gate before proposing a release change:
-
-```bash
-ALLOW_DIRTY=1 bash scripts/release-gate.sh
-```
-
-## Current limitations
-
-- Only Ubuntu 25.10 x86_64 with the checksummed standalone archive and Codex CLI
-  0.144.4 has completed the claimed user lifecycle.
-- Other Linux distributions and architectures are unverified. macOS is a build
-  and shell-lifecycle preview; Windows has build/test coverage only.
-- The database has no retention or compaction policy yet and can grow over time.
-- Long-running multi-window dogfood and independent clean-machine feedback are
-  beta follow-up work, so this release must not be described as stable.
-- Release publication recovery, plugin-validator ownership, and automated
-  dependency security updates remain deferred before a stable release.
-- Plugin marketplace installation and the native Codex footer are not supported
-  beta routes.
-
-Technical details live in [the support matrix](docs/SUPPORT.md),
-[release policy](docs/RELEASE.md), [privacy model](docs/PRIVACY.md), and the
-historical implementation notes under `notes/`.
-
-## Some Screenshots:
-<img width="624" height="200" alt="Screenshot From 2026-07-16 10-53-57" src="https://github.com/user-attachments/assets/43efedcf-ef89-427a-b73c-3f584f72f5fa" />
-<img width="781" height="523" alt="Screenshot From 2026-07-16 11-06-20-redacted_dot_app" src="https://github.com/user-attachments/assets/fbf6914e-baaa-4515-b14a-8f0122616ae7" />
-
-
-
+MIT licensed.
