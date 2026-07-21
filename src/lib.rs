@@ -1,7 +1,7 @@
 //! Accounting, transcript ingestion, and durable state for Codex Usage Watch.
 //!
 //! SQLite is authoritative; `display.json` is a replaceable projection. The
-//! Stage 5 hook adapter is exposed for the installed `codex-5h hook` command.
+//! Stage 5 hook adapter is exposed for the installed `codex-watch hook` command.
 
 pub mod calculate;
 pub mod calibration;

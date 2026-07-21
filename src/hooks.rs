@@ -11,6 +11,7 @@ use thiserror::Error;
 use crate::{IngestOptions, StateError, StatePaths, StateStore, TrackerConfig, WindowStatus};
 
 const HOOK_TIMEOUT_SECONDS: u64 = 5;
+const HOOK_COMMAND_PREFIX: &str = "codex-watch hook ";
 const LEGACY_HOOK_COMMAND_PREFIX: &str = "codex-5h hook ";
 
 #[derive(Debug, Error)]
@@ -154,7 +155,7 @@ pub fn run_hook(
             }
             if let Some((_, Some(reason))) = compatibility {
                 message.push_str(&format!(
-                    " Calibration report updated ({reason}); inspect with codex-5h analyze."
+                    " Calibration report updated ({reason}); inspect with codex-watch analyze."
                 ));
             }
             Some(message)
@@ -338,7 +339,7 @@ fn write_hooks_root(path: &Path, root: &Map<String, Value>) -> Result<(), HookAd
     bytes.push(b'\n');
     if let Ok(existing) = fs::read(path) {
         let backup = path.with_file_name(format!(
-            "{}.codex-5h.bak",
+            "{}.codex-watch.bak",
             path.file_name()
                 .and_then(|value| value.to_str())
                 .unwrap_or("hooks.json")
@@ -441,8 +442,9 @@ fn is_owned_handler(handler: &Value, event: HookEvent) -> bool {
     let Some(command) = handler.get("command").and_then(Value::as_str) else {
         return false;
     };
+    let current = format!("{HOOK_COMMAND_PREFIX}{}", event.command_name());
     let legacy = format!("{LEGACY_HOOK_COMMAND_PREFIX}{}", event.command_name());
-    if command == legacy {
+    if command == current || command == legacy {
         return true;
     }
     let Some(executable) = hook_command_executable(command, event) else {
@@ -451,7 +453,12 @@ fn is_owned_handler(handler: &Value, event: HookEvent) -> bool {
     executable
         .file_name()
         .and_then(|value| value.to_str())
-        .is_some_and(|value| value == "codex-5h" || value == "codex-5h.exe")
+        .is_some_and(|value| {
+            matches!(
+                value,
+                "codex-watch" | "codex-watch.exe" | "codex-5h" | "codex-5h.exe"
+            )
+        })
 }
 
 fn remove_owned_handlers(groups: &mut Vec<Value>, event: HookEvent) {

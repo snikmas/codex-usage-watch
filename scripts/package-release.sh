@@ -13,12 +13,10 @@ cargo build --manifest-path "$ROOT/Cargo.toml" --release --locked
 cargo package --manifest-path "$ROOT/Cargo.toml" --locked --allow-dirty
 rm -rf "$DIST/$NAME"
 mkdir -p "$DIST/$NAME"
-install -m 0755 "$ROOT/target/release/codex-5h" "$DIST/$NAME/codex-5h"
-install -m 0644 "$ROOT/docs/INSTALL.md" "$DIST/$NAME/README.md"
-install -m 0644 "$ROOT/CHANGELOG.md" "$ROOT/LICENSE" "$ROOT/SECURITY.md" \
-  "$ROOT/CONTRIBUTING.md" "$DIST/$NAME/"
-install -d "$DIST/$NAME/docs"
-install -m 0644 "$ROOT"/docs/*.md "$DIST/$NAME/docs/"
+install -m 0755 "$ROOT/target/release/codex-watch" "$DIST/$NAME/codex-watch"
+install -m 0644 "$ROOT/README.md" "$ROOT/LICENSE" "$DIST/$NAME/"
+install -d "$DIST/$NAME/docs/images"
+install -m 0644 "$ROOT"/docs/images/*.png "$DIST/$NAME/docs/images/"
 install -d "$DIST/$NAME/scripts"
 install -m 0755 "$ROOT/scripts/install.sh" "$ROOT/scripts/uninstall.sh" \
   "$ROOT/scripts/verify-install.sh" "$ROOT/scripts/backup-state.sh" \
@@ -36,11 +34,11 @@ else
 fi
 
 for required in \
-  "$NAME/codex-5h" \
+  "$NAME/codex-watch" \
   "$NAME/README.md" \
   "$NAME/BUILD-INFO.json" \
   "$NAME/SBOM.spdx.json" \
-  "$NAME/docs/INSTALL.md" \
+  "$NAME/docs/images/terminal-status.png" \
   "$NAME/scripts/install.sh" \
   "$NAME/scripts/verify-install.sh" \
   "$NAME/scripts/backup-state.sh" \

@@ -9,7 +9,7 @@ use rusqlite::Connection;
 use serde_json::{Value, json};
 
 fn run_hook(state: &tempfile::TempDir, event: &str, input: Value) -> std::process::Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_codex-5h"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_codex-watch"))
         .args(["hook", event])
         .env("CODEX_USAGE_WATCH_HOME", state.path())
         .env("CODEX_HOME", state.path())
@@ -246,7 +246,7 @@ fn install_and_uninstall_are_explicit_reversible_and_preserve_other_hooks() {
     )
     .expect("write hooks");
 
-    let denied = Command::new(env!("CARGO_BIN_EXE_codex-5h"))
+    let denied = Command::new(env!("CARGO_BIN_EXE_codex-watch"))
         .arg("install")
         .env("CODEX_HOME", home.path())
         .output()
@@ -255,7 +255,7 @@ fn install_and_uninstall_are_explicit_reversible_and_preserve_other_hooks() {
 
     for args in [["install", "--confirm"], ["install", "--confirm"]] {
         assert!(
-            Command::new(env!("CARGO_BIN_EXE_codex-5h"))
+            Command::new(env!("CARGO_BIN_EXE_codex-watch"))
                 .args(args)
                 .env("CODEX_HOME", home.path())
                 .status()
@@ -297,12 +297,12 @@ fn install_and_uninstall_are_explicit_reversible_and_preserve_other_hooks() {
                 .expect("installed command string"),
             command_name,
         );
-        assert_paths_equivalent(&executable, Path::new(env!("CARGO_BIN_EXE_codex-5h")));
+        assert_paths_equivalent(&executable, Path::new(env!("CARGO_BIN_EXE_codex-watch")));
     }
 
     for _ in 0..2 {
         assert!(
-            Command::new(env!("CARGO_BIN_EXE_codex-5h"))
+            Command::new(env!("CARGO_BIN_EXE_codex-watch"))
                 .args(["uninstall", "--confirm"])
                 .env("CODEX_HOME", home.path())
                 .status()
@@ -320,9 +320,10 @@ fn install_and_uninstall_are_explicit_reversible_and_preserve_other_hooks() {
     );
     assert_eq!(hooks["hooks"]["SessionStart"][0]["matcher"], "shared");
     assert!(hooks.to_string().contains("other-prompt"));
+    assert!(!hooks.to_string().contains("codex-watch"));
     assert!(!hooks.to_string().contains("codex-5h"));
     let backup: Value = serde_json::from_slice(
-        &fs::read(home.path().join("hooks.json.codex-5h.bak")).expect("read backup"),
+        &fs::read(home.path().join("hooks.json.codex-watch.bak")).expect("read backup"),
     )
     .expect("backup remains recoverable JSON");
     assert!(backup.to_string().contains("other"));
@@ -363,8 +364,8 @@ fn assert_paths_equivalent(actual: &Path, expected: &Path) {
 
 #[cfg(unix)]
 fn publish_test_binary(destination: &Path) {
-    let staged = destination.with_file_name(".codex-5h.tmp");
-    fs::copy(env!("CARGO_BIN_EXE_codex-5h"), &staged).expect("stage tracker binary");
+    let staged = destination.with_file_name(".codex-watch.tmp");
+    fs::copy(env!("CARGO_BIN_EXE_codex-watch"), &staged).expect("stage tracker binary");
     fs::File::open(&staged)
         .expect("open staged tracker binary")
         .sync_all()
@@ -382,14 +383,14 @@ fn malformed_hooks_and_interrupted_temp_files_never_replace_user_configuration()
     fs::write(&hooks_path, b"{not valid json").expect("write malformed hooks");
     fs::write(home.path().join(".hooks.json.interrupted"), b"partial").unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_codex-5h"))
+    let output = Command::new(env!("CARGO_BIN_EXE_codex-watch"))
         .args(["install", "--confirm"])
         .env("CODEX_HOME", home.path())
         .output()
         .expect("run install against malformed hooks");
     assert!(!output.status.success());
     assert_eq!(fs::read(&hooks_path).unwrap(), b"{not valid json");
-    assert!(!home.path().join("hooks.json.codex-5h.bak").exists());
+    assert!(!home.path().join("hooks.json.codex-watch.bak").exists());
 }
 
 #[cfg(unix)]
@@ -399,7 +400,7 @@ fn generated_hook_commands_execute_adversarial_paths_literally() {
     let component = "bin space 'single' \"double\" $dollar `touch injected-backtick` $(touch injected-substitution) \\backslash";
     let bin_dir = temp.path().join(component);
     fs::create_dir_all(&bin_dir).expect("create adversarial binary directory");
-    let copied_binary = bin_dir.join("codex-5h");
+    let copied_binary = bin_dir.join("codex-watch");
     publish_test_binary(&copied_binary);
 
     let codex_home = temp.path().join("codex home");
@@ -480,7 +481,7 @@ fn hook_install_rejects_a_non_utf8_executable_path_without_writing_hooks() {
     let component = OsString::from_vec(b"invalid-utf8-\xff".to_vec());
     let bin_dir = temp.path().join(component);
     fs::create_dir_all(&bin_dir).expect("create non-UTF-8 binary directory");
-    let copied_binary = bin_dir.join("codex-5h");
+    let copied_binary = bin_dir.join("codex-watch");
     publish_test_binary(&copied_binary);
     let codex_home = temp.path().join("codex-home");
 

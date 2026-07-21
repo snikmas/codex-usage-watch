@@ -8,16 +8,16 @@ fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PREFIX="${PREFIX:-$HOME/.local}"
-BIN="$PREFIX/bin/codex-5h"
+BIN="$PREFIX/bin/codex-watch"
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 HOOKS_FILE="$CODEX_HOME/hooks.json"
 if [[ -x "$BIN" ]]; then
   "$BIN" uninstall --confirm
   rm -f "$BIN"
-  echo "Removed the codex-5h binary and its hook entries."
-elif [[ -x "$ROOT/codex-5h" && -f "$ROOT/BUILD-INFO.json" && -f "$ROOT/SBOM.spdx.json" ]]; then
-  "$ROOT/codex-5h" uninstall --confirm
-  echo "The installed codex-5h binary was already absent. Removed its hook entries with the verified archive binary."
+  echo "Removed the codex-watch binary and its hook entries."
+elif [[ -x "$ROOT/codex-watch" && -f "$ROOT/BUILD-INFO.json" && -f "$ROOT/SBOM.spdx.json" ]]; then
+  "$ROOT/codex-watch" uninstall --confirm
+  echo "The installed codex-watch binary was already absent. Removed its hook entries with the verified archive binary."
 else
   if python3 - "$HOOKS_FILE" <<'PY'
 import json
@@ -56,7 +56,7 @@ def decode_posix_word(encoded):
     return "".join(decoded)
 
 def owned(command, event):
-    if command == f"codex-5h hook {event}":
+    if command in {f"codex-watch hook {event}", f"codex-5h hook {event}"}:
         return True
     suffix = f" hook {event}"
     if not isinstance(command, str) or not command.endswith(suffix):
@@ -64,7 +64,9 @@ def owned(command, event):
     executable = decode_posix_word(command[:-len(suffix)].strip())
     if executable is None:
         return False
-    return pathlib.PurePosixPath(executable).name in {"codex-5h", "codex-5h.exe"}
+    return pathlib.PurePosixPath(executable).name in {
+        "codex-watch", "codex-watch.exe", "codex-5h", "codex-5h.exe"
+    }
 
 hooks = root.get("hooks", {}) if isinstance(root, dict) else {}
 for wire_event, command_event in events.items():
@@ -77,16 +79,16 @@ for wire_event, command_event in events.items():
 raise SystemExit(0)
 PY
   then
-    echo "The codex-5h binary was already absent and no Codex Usage Watch hooks were present."
+    echo "The codex-watch binary was already absent and no Codex Usage Watch hooks were present."
   else
     status=$?
-    echo "Partial cleanup only: the codex-5h binary is absent, so hook configuration was not changed." >&2
+    echo "Partial cleanup only: the codex-watch binary is absent, so hook configuration was not changed." >&2
     if [[ "$status" == "10" ]]; then
       echo "Codex Usage Watch hook entries are still present in $HOOKS_FILE." >&2
     else
       echo "Hook state could not be verified safely at $HOOKS_FILE." >&2
     fi
-    echo "Recovery: download the matching release archive and SHA256SUMS, verify the checksum, extract it, then rerun PREFIX=\"$PREFIX\" CODEX_HOME=\"$CODEX_HOME\" <archive>/scripts/uninstall.sh --confirm." >&2
+    echo "Recovery: rebuild codex-watch from this project, then run CODEX_HOME=\"$CODEX_HOME\" target/release/codex-watch uninstall --confirm." >&2
     echo "No hook file or tracker state was modified." >&2
     exit 5
   fi

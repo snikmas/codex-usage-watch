@@ -74,14 +74,11 @@ with tempfile.TemporaryDirectory(prefix="codex-usage-watch-privacy-") as tempora
     package_root = package_roots[0]
     expected_files = {
         "BUILD-INFO.json",
-        "CHANGELOG.md",
-        "CONTRIBUTING.md",
         "LICENSE",
         "README.md",
         "SBOM.spdx.json",
-        "SECURITY.md",
-        "codex-5h",
-        *{f"docs/{path.name}" for path in (root / "docs").glob("*.md")},
+        "codex-watch",
+        *{f"docs/images/{path.name}" for path in (root / "docs/images").glob("*.png")},
         "scripts/backup-state.sh",
         "scripts/check-package-docs.sh",
         "scripts/install.sh",

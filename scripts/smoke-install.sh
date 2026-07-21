@@ -14,13 +14,13 @@ mkdir -p "$CODEX_HOME"
 printf '%s\n' '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"other-hook"}]}]}}' >"$CODEX_HOME/hooks.json"
 
 INSTALL_HOOKS=1 "$ROOT/scripts/install.sh"
-"$PREFIX/bin/codex-5h" setup --skip-import >/dev/null
+"$PREFIX/bin/codex-watch" setup --skip-import >/dev/null
 printf '%s' '{"hook_event_name":"SessionStart","transcript_path":null,"codex_version":"smoke"}' \
-  | "$PREFIX/bin/codex-5h" hook session-start >/dev/null
+  | "$PREFIX/bin/codex-watch" hook session-start >/dev/null
 "$ROOT/scripts/verify-install.sh"
-"$PREFIX/bin/codex-5h" doctor >/dev/null
-"$PREFIX/bin/codex-5h" history --json >/dev/null
-"$PREFIX/bin/codex-5h" reset --confirm >/dev/null
+"$PREFIX/bin/codex-watch" doctor >/dev/null
+"$PREFIX/bin/codex-watch" history --json >/dev/null
+"$PREFIX/bin/codex-watch" reset --confirm >/dev/null
 "$ROOT/scripts/backup-state.sh" "$TEMP/backup.sqlite3"
 python3 - "$CODEX_USAGE_WATCH_HOME" "$TEMP/backup.sqlite3" <<'PY'
 import pathlib
@@ -39,17 +39,17 @@ for suffix in ("-wal", "-shm"):
 PY
 
 # Prove the documented restore sequence against a consistent backup.
-"$PREFIX/bin/codex-5h" uninstall --confirm >/dev/null
+"$PREFIX/bin/codex-watch" uninstall --confirm >/dev/null
 rm -f "$CODEX_USAGE_WATCH_HOME/state.sqlite3-wal" "$CODEX_USAGE_WATCH_HOME/state.sqlite3-shm"
 cp "$TEMP/backup.sqlite3" "$CODEX_USAGE_WATCH_HOME/state.sqlite3"
-"$PREFIX/bin/codex-5h" install --confirm >/dev/null
-"$PREFIX/bin/codex-5h" doctor >/dev/null
+"$PREFIX/bin/codex-watch" install --confirm >/dev/null
+"$PREFIX/bin/codex-watch" doctor >/dev/null
 
 # Upgrade is the same reproducible, state-preserving install over an existing version.
 "$ROOT/scripts/install.sh"
 test -f "$CODEX_USAGE_WATCH_HOME/state.sqlite3"
 "$ROOT/scripts/uninstall.sh" --confirm
-test ! -e "$PREFIX/bin/codex-5h"
+test ! -e "$PREFIX/bin/codex-watch"
 test -f "$CODEX_USAGE_WATCH_HOME/state.sqlite3"
 test -f "$TEMP/backup.sqlite3"
 python3 - "$CODEX_HOME/hooks.json" <<'PY'
@@ -59,7 +59,7 @@ import sys
 data = json.load(open(sys.argv[1], encoding="utf-8"))
 encoded = json.dumps(data)
 assert "other-hook" in encoded
-assert "codex-5h hook" not in encoded
+assert "codex-watch hook" not in encoded
 PY
 
 # Exercise the exact checksummed archive, including its installer, without the
@@ -73,9 +73,9 @@ export CODEX_HOME="$TEMP/package-codex-home"
 export CODEX_USAGE_WATCH_HOME="$TEMP/package-state"
 mkdir -p "$CODEX_HOME"
 INSTALL_HOOKS=1 "$PACKAGE_ROOT/scripts/install.sh"
-"$PREFIX/bin/codex-5h" setup --skip-import >/dev/null
+"$PREFIX/bin/codex-watch" setup --skip-import >/dev/null
 "$PACKAGE_ROOT/scripts/verify-install.sh"
 "$PACKAGE_ROOT/scripts/uninstall.sh" --confirm
-test ! -e "$PREFIX/bin/codex-5h"
+test ! -e "$PREFIX/bin/codex-watch"
 
 echo "Source and checksummed-package install, setup, verify, upgrade, backup, rollback, and state retention: PASS"

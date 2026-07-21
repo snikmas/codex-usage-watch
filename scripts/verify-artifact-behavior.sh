@@ -11,7 +11,7 @@ TEMP="$(mktemp -d)"
 trap 'rm -rf "$TEMP"' EXIT
 tar -xzf "$ARCHIVE" -C "$TEMP"
 PACKAGE_ROOT="$(find "$TEMP" -mindepth 1 -maxdepth 1 -type d -name 'codex-usage-watch-*' -print -quit)"
-BIN="$PACKAGE_ROOT/codex-5h"
+BIN="$PACKAGE_ROOT/codex-watch"
 test -x "$BIN"
 
 write_case() {

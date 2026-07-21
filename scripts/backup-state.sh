@@ -7,7 +7,7 @@ if [[ $# -ne 1 ]]; then
 fi
 
 PREFIX="${PREFIX:-$HOME/.local}"
-"$PREFIX/bin/codex-5h" backup "$1" --confirm
+"$PREFIX/bin/codex-watch" backup "$1" --confirm
 python3 - "$1" <<'PY'
 import sqlite3
 import sys

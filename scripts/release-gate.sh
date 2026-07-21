@@ -28,7 +28,7 @@ bash scripts/verify-artifact-behavior.sh "$ARCHIVE"
 CRATE="target/release-dist/codex-usage-watch-$VERSION.crate"
 bash scripts/test-privacy-scan.sh
 
-# Reproduce the public INSTALL.md path from a blank directory. From this point
+# Reproduce the README install path from a blank directory. From this point
 # through uninstall, every executable and helper comes from the release archive.
 PUBLIC_TEMP="$(mktemp -d)"
 trap 'rm -rf "$PUBLIC_TEMP"' EXIT
@@ -67,12 +67,12 @@ export CODEX_USAGE_WATCH_HOME="$PUBLIC_TEMP/state"
 mkdir -p "$CODEX_HOME"
 printf '%s\n' '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"unrelated-hook"}]}]}}' >"$CODEX_HOME/hooks.json"
 INSTALL_HOOKS=1 bash "$PACKAGE_ROOT/scripts/install.sh"
-"$PREFIX/bin/codex-5h" setup --skip-import >/dev/null
+"$PREFIX/bin/codex-watch" setup --skip-import >/dev/null
 bash "$PACKAGE_ROOT/scripts/verify-install.sh"
 bash "$PACKAGE_ROOT/scripts/backup-state.sh" "$PUBLIC_TEMP/backup.sqlite3"
 
 # Restore from the integrity-checked backup using only archive-provided tools.
-"$PREFIX/bin/codex-5h" uninstall --confirm >/dev/null
+"$PREFIX/bin/codex-watch" uninstall --confirm >/dev/null
 rm -f "$CODEX_USAGE_WATCH_HOME/state.sqlite3-wal" "$CODEX_USAGE_WATCH_HOME/state.sqlite3-shm"
 cp "$PUBLIC_TEMP/backup.sqlite3" "$CODEX_USAGE_WATCH_HOME/state.sqlite3"
 INSTALL_HOOKS=1 bash "$PACKAGE_ROOT/scripts/install.sh"
@@ -80,11 +80,11 @@ bash "$PACKAGE_ROOT/scripts/verify-install.sh"
 
 # Upgrade and rollback both preserve state. The rollback binary is a copy of the
 # verified archive binary, never a source-checkout build.
-cp "$PREFIX/bin/codex-5h" "$PUBLIC_TEMP/prior-codex-5h"
+cp "$PREFIX/bin/codex-watch" "$PUBLIC_TEMP/prior-codex-watch"
 INSTALL_HOOKS=1 bash "$PACKAGE_ROOT/scripts/install.sh"
-"$PREFIX/bin/codex-5h" uninstall --confirm >/dev/null
-install -m 0755 "$PUBLIC_TEMP/prior-codex-5h" "$PREFIX/bin/codex-5h"
-"$PREFIX/bin/codex-5h" install --confirm >/dev/null
+"$PREFIX/bin/codex-watch" uninstall --confirm >/dev/null
+install -m 0755 "$PUBLIC_TEMP/prior-codex-watch" "$PREFIX/bin/codex-watch"
+"$PREFIX/bin/codex-watch" install --confirm >/dev/null
 bash "$PACKAGE_ROOT/scripts/verify-install.sh"
 bash "$PACKAGE_ROOT/scripts/uninstall.sh" --confirm
 test -f "$CODEX_USAGE_WATCH_HOME/state.sqlite3"
@@ -94,7 +94,7 @@ import sys
 
 encoded = json.dumps(json.load(open(sys.argv[1], encoding="utf-8")))
 assert "unrelated-hook" in encoded
-assert "codex-5h hook" not in encoded
+assert "codex-watch hook" not in encoded
 PY
 
 echo "Local exact-artifact release gate: PASS"

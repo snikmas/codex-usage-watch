@@ -19,9 +19,6 @@ include = [
     "/Cargo.toml",
     "/Cargo.lock",
     "/README.md",
-    "/CONTRIBUTING.md",
-    "/SECURITY.md",
-    "/CHANGELOG.md",
     "/LICENSE",
     "/Makefile",
 ]
@@ -31,7 +28,7 @@ name = "codex_usage_watch"
 path = "src/lib.rs"
 
 [[bin]]
-name = "codex-5h"
+name = "codex-watch"
 path = "src/main.rs"
 
 [dependencies]
