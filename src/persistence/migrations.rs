@@ -343,6 +343,15 @@ fn migrate_to(connection: &mut Connection, target_version: i64) -> Result<(), St
         )?;
         transaction.pragma_update(None, "user_version", 11)?;
     }
+    if version < 12 && target_version >= 12 {
+        transaction
+            .execute_batch("ALTER TABLE windows ADD COLUMN server_five_hour_observed_at TEXT;")?;
+        transaction.execute(
+            "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
+            params![12, Utc::now().to_rfc3339()],
+        )?;
+        transaction.pragma_update(None, "user_version", 12)?;
+    }
     transaction.commit()?;
     Ok(())
 }
@@ -515,6 +524,16 @@ mod tests {
                     [calibration_id],
                 )
                 .unwrap();
+            if version >= 11 {
+                connection
+                    .execute(
+                        "UPDATE windows
+                         SET boundary_kind = 'initial_observation',
+                             boundary_at = started_at",
+                        [],
+                    )
+                    .unwrap();
+            }
         } else {
             connection
                 .execute(

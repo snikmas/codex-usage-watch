@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2030-01-01T17:00:00Z",
+  "observer_role": "independent_tester",
+  "environment": {
+    "os": "Ubuntu 25.10",
+    "architecture": "x86_64",
+    "codex_version": "0.146.0",
+    "artifact_version": "0.1.0-beta.2",
+    "artifact_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "artifact_source": "published_release",
+    "compatibility_result": "compatible",
+    "compatibility_identity": {
+      "plan_type": "plus",
+      "model_slug": "synthetic-model",
+      "service_tier": "default",
+      "schema_fingerprint": "token-count-v1"
+    }
+  },
+  "window": {
+    "started_at": "2030-01-01T12:00:00Z",
+    "ends_at": "2030-01-01T17:00:00Z",
+    "observed_at": "2030-01-01T16:59:00Z"
+  },
+  "reading": {
+    "five_hour_percent": 82.0,
+    "value_source": "local_calibrated_estimate",
+    "weekly_movement_points": 13.0,
+    "freshness": "fresh"
+  },
+  "ground_truth": {
+    "available": false,
+    "identity_safe": false,
+    "five_hour_percent": null,
+    "absolute_error_points": null
+  },
+  "scenarios": ["normal"],
+  "warnings_emitted": [],
+  "usability": {
+    "estimated": "clear",
+    "weekly_cost": "clear",
+    "stale": "not_observed",
+    "unknown": "not_observed",
+    "over_100": "not_observed",
+    "notice_usefulness": "not_observed",
+    "note_codes": ["no_help_needed", "privacy_wording_clear"]
+  },
+  "lifecycle": {
+    "checksum_verified": "passed",
+    "install": "passed",
+    "hook_review": "passed",
+    "hook_trust": "passed",
+    "real_hooks": ["SessionStart", "UserPromptSubmit", "Stop"],
+    "setup": "passed",
+    "status": "passed",
+    "refresh": "passed",
+    "history": "passed",
+    "analyze": "passed",
+    "doctor": "passed",
+    "backup": "passed",
+    "upgrade": "passed",
+    "rollback": "passed",
+    "uninstall": "passed",
+    "state_retained": "passed",
+    "unrelated_hooks_preserved": "passed",
+    "private_modes_verified": "passed",
+    "public_docs_only": "passed"
+  }
+}
