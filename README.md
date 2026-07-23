@@ -17,24 +17,32 @@ This is only a local estimate, not official OpenAI usage or billing data.
 
 ## Project status
 
-This is a feature-complete experimental beta, not a finished stable release.
-The core tracker, reset-aware accounting, privacy controls, packaging, upgrade
-and rollback checks, and automated Ubuntu/macOS artifact lifecycles are
-implemented.
+**Completed personal project.** The planned tracker is feature-complete and its
+scope is now frozen. It remains an experimental beta because the number is a
+local estimate rather than an official account limit. Future work is limited to
+important fixes and compatibility maintenance; the unfinished ideas in
+`notes/plan.md` are not part of the completed scope.
 
 The latest public release is
 [`v0.1.0-beta.1`](https://github.com/snikmas/codex-watch/releases/tag/v0.1.0-beta.1).
-The repository is preparing beta.2. Stable or broadly supported claims remain
-blocked until all of these external acceptance checks are observed:
+The core tracker, reset-aware accounting, privacy controls, packaging, upgrade
+and rollback checks, and automated Ubuntu/macOS artifact lifecycles are
+implemented. Optional long-term and independent-user observations remain in
+[acceptance evidence](docs/ACCEPTANCE.md); they are useful follow-up evidence,
+not unfinished product features.
 
-- five naturally elapsed five-hour windows with sanitized accuracy/usability
-  evidence;
-- one independent user completing the published-artifact lifecycle on Ubuntu
-  25.10 x86_64 using public instructions only;
-- the exact published Apple Silicon artifact completing the lifecycle on a real
-  Mac.
+## Supported systems
 
-See [acceptance evidence](docs/ACCEPTANCE.md) for the live checklist.
+| System | Status | What that means |
+|---|---|---|
+| Ubuntu 25.10 x86_64 | **Supported experimental beta** | Prebuilt release archive, installer, hooks, upgrade, rollback, backup, and uninstall lifecycle are tested. |
+| Apple Silicon macOS | **Preview** | The project builds and its automated lifecycle passes, but the published artifact has not completed a real-Mac acceptance run. |
+| Intel macOS | **Source preview only** | No prebuilt release artifact or support promise. |
+| Windows | **Unsupported** | Rust build/tests run in CI, but there is no native installer, artifact, hook lifecycle, or WSL support claim. |
+| Other Linux systems | **Unsupported/best effort** | They may work from source, but only the exact Ubuntu target above is claimed. |
+
+Codex CLI is required on every system. “Supported” here describes the tested
+project lifecycle, not the accuracy of an official OpenAI quota value.
 
 ## Four ways to see the output
 
@@ -88,12 +96,9 @@ screen.
 
 ## Install
 
-The published experimental beta targets Ubuntu 25.10 x86_64. Its automated
-clean-container lifecycle passes, but independent-user acceptance is still
-open, so it is not yet a stable or broadly supported release. Apple Silicon
-macOS artifact and CI work remains preview-only until a published artifact
-passes on a real Mac. Intel macOS is source-preview-only with no release
-artifact, and Windows installation is unsupported. Codex CLI is required.
+The published experimental beta targets Ubuntu 25.10 x86_64. For other systems,
+follow the status table above rather than assuming that a successful build means
+the complete installation and hook lifecycle is supported.
 
 For the Ubuntu beta, download the x86_64 archive and `SHA256SUMS` from the same
 [GitHub release](https://github.com/snikmas/codex-watch/releases) into a clean
@@ -140,7 +145,36 @@ setup with:
 If `codex-watch` is not found in a new terminal, either use the full path above
 or add `~/.local/bin` to your `PATH`.
 
-## Independent Ubuntu acceptance
+## Configure
+
+The simplest configuration starts tracking from the moment you install:
+
+```bash
+codex-watch setup --skip-import
+codex-watch doctor
+codex-watch status
+```
+
+Restart Codex, open `/hooks`, inspect and trust `SessionStart`,
+`UserPromptSubmit`, and `Stop`, then start a fresh Codex session. The tracker
+cannot approve its own hooks; `doctor` verifies their paths and definitions.
+
+Optional environment settings:
+
+| Setting | When it applies | Purpose |
+|---|---|---|
+| `CODEX_HOME` | Runtime and installer | Use a Codex configuration directory other than `~/.codex`. |
+| `CODEX_USAGE_WATCH_HOME` | Runtime and installer | Store the SQLite database, display projection, and report in a custom directory. |
+| `CODEX_USAGE_WATCH_THRESHOLDS` | Runtime | Replace the default `75,90,100` warning levels with comma-separated positive integers, for example `70,85,100`. |
+| `PREFIX` | Installer scripts | Choose the installation prefix; default is `~/.local`. |
+| `INSTALL_HOOKS=1` | `scripts/install.sh` only | Add the three Codex hook definitions during installation. |
+
+Keep `CODEX_HOME` and `CODEX_USAGE_WATCH_HOME` consistent across installation,
+normal commands, backup, upgrade, and uninstall. If you customize warning
+thresholds, set the variable in the environment that starts both Codex and
+`codex-watch`. Run `codex-watch doctor --json` when diagnosing a configuration.
+
+## Optional independent Ubuntu acceptance
 
 An independent tester should use only the published archive, `SHA256SUMS`,
 README, and files packaged inside the archive. After completing the full
@@ -282,7 +316,8 @@ Run the second command from the cloned project directory.
   until real-Mac published-artifact acceptance succeeds. Intel macOS is
   source-preview-only with no artifact; Windows installation is unsupported.
 - Longitudinal accuracy/usability evidence and independent Ubuntu acceptance
-  remain open, so this is not yet a stable release.
+  remain optional follow-up evidence; the project makes no stable or broad
+  platform claim.
 - The `/statusline` and `/status` additions require the separate custom Codex
   build; the normal installation only provides the terminal command and hooks.
 - The local database does not have automatic cleanup yet.
