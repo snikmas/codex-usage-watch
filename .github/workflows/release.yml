@@ -27,7 +27,7 @@ jobs:
         with:
           ref: v0.1.0-beta.1
           path: prior-source
-      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master, reviewed 2026-07-15
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, reviewed 2026-07-15
         with:
           toolchain: stable
           components: rustfmt, clippy
@@ -61,7 +61,7 @@ jobs:
           bash scripts/verify-release-lifecycle.sh \
             "$archive" target/release-dist/SHA256SUMS \
             "$prior_archive" "$RUNNER_TEMP/prior-dist/SHA256SUMS"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: runner.os == 'Linux'
         with:
           name: release-${{ matrix.target }}
@@ -70,7 +70,7 @@ jobs:
             target/release-dist/SHA256SUMS
             target/release-dist/*.crate
           if-no-files-found: error
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: runner.os == 'macOS'
         with:
           name: release-${{ matrix.target }}
@@ -83,7 +83,7 @@ jobs:
     needs: artifacts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: release-*
           path: release-assets
