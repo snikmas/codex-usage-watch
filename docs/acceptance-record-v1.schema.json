@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/snikmas/codex-usage-watch/blob/main/docs/acceptance-record-v1.schema.json",
+  "$id": "https://github.com/snikmas/codex-watch/blob/main/docs/acceptance-record-v1.schema.json",
   "title": "Codex Usage Watch content-free acceptance record",
   "type": "object",
   "additionalProperties": false,

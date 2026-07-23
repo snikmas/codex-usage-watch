@@ -6,9 +6,9 @@ rust-version = "1.85"
 description = "Local, non-blocking Codex usage awareness"
 license = "MIT"
 readme = "README.md"
-repository = "https://github.com/snikmas/codex-usage-watch"
-homepage = "https://github.com/snikmas/codex-usage-watch"
-documentation = "https://github.com/snikmas/codex-usage-watch#readme"
+repository = "https://github.com/snikmas/codex-watch"
+homepage = "https://github.com/snikmas/codex-watch"
+documentation = "https://github.com/snikmas/codex-watch#readme"
 include = [
     "/src/**",
     "/tests/**",
