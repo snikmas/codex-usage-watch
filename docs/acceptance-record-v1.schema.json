@@ -30,6 +30,7 @@
         "codex_version": { "type": "string", "pattern": "^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$" },
         "artifact_version": { "type": "string", "pattern": "^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$" },
         "artifact_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "artifact_source": { "enum": ["published_release", "ci_artifact", "local_candidate"] },
         "compatibility_result": { "enum": ["compatible", "review", "degraded"] },
         "compatibility_identity": {
           "type": "object",
@@ -103,10 +104,61 @@
           "items": { "enum": ["no_help_needed", "needed_public_docs", "needed_unpublished_help", "wording_unclear", "threshold_too_early", "threshold_too_late", "duplicate_notice", "privacy_wording_clear", "hook_trust_unclear"] }
         }
       }
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "checksum_verified",
+        "install",
+        "hook_review",
+        "hook_trust",
+        "real_hooks",
+        "setup",
+        "status",
+        "refresh",
+        "history",
+        "analyze",
+        "doctor",
+        "backup",
+        "upgrade",
+        "rollback",
+        "uninstall",
+        "state_retained",
+        "unrelated_hooks_preserved",
+        "private_modes_verified",
+        "public_docs_only"
+      ],
+      "properties": {
+        "checksum_verified": { "$ref": "#/$defs/lifecycleStatus" },
+        "install": { "$ref": "#/$defs/lifecycleStatus" },
+        "hook_review": { "$ref": "#/$defs/lifecycleStatus" },
+        "hook_trust": { "$ref": "#/$defs/lifecycleStatus" },
+        "real_hooks": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["SessionStart", "UserPromptSubmit", "Stop"] }
+        },
+        "setup": { "$ref": "#/$defs/lifecycleStatus" },
+        "status": { "$ref": "#/$defs/lifecycleStatus" },
+        "refresh": { "$ref": "#/$defs/lifecycleStatus" },
+        "history": { "$ref": "#/$defs/lifecycleStatus" },
+        "analyze": { "$ref": "#/$defs/lifecycleStatus" },
+        "doctor": { "$ref": "#/$defs/lifecycleStatus" },
+        "backup": { "$ref": "#/$defs/lifecycleStatus" },
+        "upgrade": { "$ref": "#/$defs/lifecycleStatus" },
+        "rollback": { "$ref": "#/$defs/lifecycleStatus" },
+        "uninstall": { "$ref": "#/$defs/lifecycleStatus" },
+        "state_retained": { "$ref": "#/$defs/lifecycleStatus" },
+        "unrelated_hooks_preserved": { "$ref": "#/$defs/lifecycleStatus" },
+        "private_modes_verified": { "$ref": "#/$defs/lifecycleStatus" },
+        "public_docs_only": { "$ref": "#/$defs/lifecycleStatus" }
+      }
     }
   },
   "$defs": {
     "understanding": { "enum": ["clear", "unclear", "not_observed"] },
-    "safeToken": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+:-]{0,127}$" }
+    "safeToken": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+:-]{0,127}$" },
+    "lifecycleStatus": { "enum": ["passed", "failed", "not_observed"] }
   }
 }
