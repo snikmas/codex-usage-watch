@@ -97,7 +97,7 @@ document = {
     "SPDXID": "SPDXRef-DOCUMENT",
     "name": f"codex-usage-watch-{root_package['version']}-{target}",
     "documentNamespace": (
-        "https://github.com/snikmas/codex-usage-watch/"
+        "https://github.com/snikmas/codex-watch/"
         f"sbom/{root_package['version']}/{target}/{lock_hash}"
     ),
     "creationInfo": {
@@ -120,7 +120,7 @@ build_info = {
     "product": "Codex Usage Watch",
     "version": root_package["version"],
     "target": target,
-    "source_repository": "https://github.com/snikmas/codex-usage-watch",
+    "source_repository": "https://github.com/snikmas/codex-watch",
     "source_revision": revision,
     "source_dirty": dirty,
     "source_timestamp_utc": created,

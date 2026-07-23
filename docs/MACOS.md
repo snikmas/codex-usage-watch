@@ -22,8 +22,20 @@ bash scripts/verify-release-lifecycle.sh \
 
 The lifecycle script covers spaces and Unicode paths, checksum verification,
 install, setup, status, refresh, history, analyze, doctor, all three protocol
-handlers, backup, upgrade, rollback, uninstall, unrelated hooks, state
-retention, and private Unix modes.
+handlers, backup, uninstall, unrelated hooks, state retention, and private Unix
+modes. CI also gives it a pinned `v0.1.0-beta.1` artifact built for the same
+Apple Silicon target:
+
+```bash
+bash scripts/verify-release-lifecycle.sh \
+  ../codex-usage-watch-VERSION-aarch64-apple-darwin.tar.gz ../SHA256SUMS \
+  /path/to/codex-usage-watch-0.1.0-beta.1-aarch64-apple-darwin.tar.gz \
+  /path/to/prior-SHA256SUMS
+```
+
+The four-argument form proves a real schema-and-binary upgrade, restores the
+prior database and binary for rollback, and upgrades to the candidate again.
+The two-argument form deliberately makes no upgrade or rollback claim.
 
 Real `/hooks` review and trust cannot be automated. Restart Codex, inspect and
 trust `SessionStart`, `UserPromptSubmit`, and `Stop`, then use a content-free

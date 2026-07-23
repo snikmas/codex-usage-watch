@@ -44,6 +44,7 @@ for required in \
   "$NAME/docs/ACCEPTANCE.md" \
   "$NAME/docs/MACOS.md" \
   "$NAME/docs/acceptance-record-v1.schema.json" \
+  "$NAME/docs/acceptance-record-stage15.example.json" \
   "$NAME/docs/images/terminal-status.png" \
   "$NAME/scripts/install.sh" \
   "$NAME/scripts/verify-install.sh" \

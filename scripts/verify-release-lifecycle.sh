@@ -2,8 +2,8 @@
 set -euo pipefail
 umask 022
 
-if [[ $# -ne 2 ]]; then
-  echo "usage: scripts/verify-release-lifecycle.sh ARCHIVE SHA256SUMS" >&2
+if [[ $# -ne 2 && $# -ne 4 ]]; then
+  echo "usage: scripts/verify-release-lifecycle.sh ARCHIVE SHA256SUMS [PRIOR_ARCHIVE PRIOR_SHA256SUMS]" >&2
   exit 2
 fi
 
@@ -11,6 +11,14 @@ ARCHIVE="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 CHECKSUMS="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"
 test -f "$ARCHIVE"
 test -f "$CHECKSUMS"
+PRIOR_ARCHIVE=""
+PRIOR_CHECKSUMS=""
+if [[ $# -eq 4 ]]; then
+  PRIOR_ARCHIVE="$(cd "$(dirname "$3")" && pwd)/$(basename "$3")"
+  PRIOR_CHECKSUMS="$(cd "$(dirname "$4")" && pwd)/$(basename "$4")"
+  test -f "$PRIOR_ARCHIVE"
+  test -f "$PRIOR_CHECKSUMS"
+fi
 
 checksum() {
   if command -v sha256sum >/dev/null 2>&1; then
@@ -20,17 +28,26 @@ checksum() {
   fi
 }
 
+verify_checksum() {
+  local archive="$1"
+  local checksums="$2"
+  local name expected actual
+  name="$(basename "$archive")"
+  expected="$(awk -v name="$name" '$2 == name || $2 == "*" name {print $1}' "$checksums")"
+  if [[ -z "$expected" || "$(printf '%s\n' "$expected" | wc -l | tr -d ' ')" != "1" ]]; then
+    echo "checksum file must contain exactly one entry for $name" >&2
+    exit 2
+  fi
+  actual="$(checksum "$archive")"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "checksum mismatch for $name" >&2
+    exit 2
+  fi
+  printf '%s\n' "$actual"
+}
+
 ARCHIVE_NAME="$(basename "$ARCHIVE")"
-EXPECTED="$(awk -v name="$ARCHIVE_NAME" '$2 == name || $2 == "*" name {print $1}' "$CHECKSUMS")"
-if [[ -z "$EXPECTED" || "$(printf '%s\n' "$EXPECTED" | wc -l | tr -d ' ')" != "1" ]]; then
-  echo "checksum file must contain exactly one entry for $ARCHIVE_NAME" >&2
-  exit 2
-fi
-ACTUAL="$(checksum "$ARCHIVE")"
-if [[ "$ACTUAL" != "$EXPECTED" ]]; then
-  echo "checksum mismatch for $ARCHIVE_NAME" >&2
-  exit 2
-fi
+ACTUAL="$(verify_checksum "$ARCHIVE" "$CHECKSUMS")"
 
 case "$(uname -s):$(uname -m)" in
   Linux:x86_64) EXPECTED_TARGET="x86_64-unknown-linux-gnu" ;;
@@ -47,12 +64,30 @@ case "$ARCHIVE_NAME" in
     exit 2
     ;;
 esac
+if [[ -n "$PRIOR_ARCHIVE" ]]; then
+  case "$(basename "$PRIOR_ARCHIVE")" in
+    *-"$EXPECTED_TARGET".tar.gz) ;;
+    *)
+      echo "prior artifact target does not match this machine: expected $EXPECTED_TARGET" >&2
+      exit 2
+      ;;
+  esac
+  verify_checksum "$PRIOR_ARCHIVE" "$PRIOR_CHECKSUMS" >/dev/null
+fi
 
 TEMP="$(mktemp -d)"
 trap 'rm -rf "$TEMP"' EXIT
 tar -xzf "$ARCHIVE" -C "$TEMP"
 PACKAGE_ROOT="$(find "$TEMP" -mindepth 1 -maxdepth 1 -type d -name 'codex-usage-watch-*' -print -quit)"
 test -n "$PACKAGE_ROOT"
+PRIOR_ROOT=""
+if [[ -n "$PRIOR_ARCHIVE" ]]; then
+  mkdir -p "$TEMP/prior"
+  tar -xzf "$PRIOR_ARCHIVE" -C "$TEMP/prior"
+  PRIOR_ROOT="$(find "$TEMP/prior" -mindepth 1 -maxdepth 1 -type d -name 'codex-usage-watch-*' -print -quit)"
+  test -n "$PRIOR_ROOT"
+  test -x "$PRIOR_ROOT/codex-5h"
+fi
 
 python3 - "$PACKAGE_ROOT/BUILD-INFO.json" "$EXPECTED_TARGET" "$ACTUAL" <<'PY'
 import json
@@ -73,6 +108,22 @@ export CODEX_USAGE_WATCH_HOME="$TEMP/space path/使用/state"
 mkdir -p "$CODEX_HOME"
 printf '%s\n' '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"unrelated-hook"}]}]}}' >"$CODEX_HOME/hooks.json"
 
+PRIOR_SCHEMA=""
+if [[ -n "$PRIOR_ROOT" ]]; then
+  INSTALL_HOOKS=1 bash "$PRIOR_ROOT/scripts/install.sh" >/dev/null
+  "$PREFIX/bin/codex-5h" refresh >/dev/null
+  PRIOR_SCHEMA="$(python3 - "$CODEX_USAGE_WATCH_HOME/state.sqlite3" <<'PY'
+import sqlite3
+import sys
+
+with sqlite3.connect(sys.argv[1]) as connection:
+    print(connection.execute("PRAGMA user_version").fetchone()[0])
+PY
+)"
+  cp "$CODEX_USAGE_WATCH_HOME/state.sqlite3" "$TEMP/prior-state.sqlite3"
+  bash "$PRIOR_ROOT/scripts/uninstall.sh" --confirm >/dev/null
+fi
+
 INSTALL_HOOKS=1 bash "$PACKAGE_ROOT/scripts/install.sh" >/dev/null
 BIN="$PREFIX/bin/codex-watch"
 "$BIN" setup --skip-import >/dev/null
@@ -83,6 +134,17 @@ BIN="$PREFIX/bin/codex-watch"
 "$BIN" history --json | python3 -m json.tool >/dev/null
 "$BIN" analyze >/dev/null
 "$BIN" doctor >/dev/null
+if [[ -n "$PRIOR_SCHEMA" ]]; then
+  CURRENT_SCHEMA="$(python3 - "$CODEX_USAGE_WATCH_HOME/state.sqlite3" <<'PY'
+import sqlite3
+import sys
+
+with sqlite3.connect(sys.argv[1]) as connection:
+    print(connection.execute("PRAGMA user_version").fetchone()[0])
+PY
+)"
+  test "$CURRENT_SCHEMA" -gt "$PRIOR_SCHEMA"
+fi
 
 for event in session-start user-prompt-submit stop; do
   case "$event" in
@@ -114,14 +176,20 @@ PY
 fi
 
 bash "$PACKAGE_ROOT/scripts/backup-state.sh" "$TEMP/backup.sqlite3" >/dev/null
-cp "$BIN" "$TEMP/prior-codex-watch"
 
-# Upgrade with the same exact artifact, then roll back to the saved verified binary.
-INSTALL_HOOKS=1 bash "$PACKAGE_ROOT/scripts/install.sh" >/dev/null
-"$BIN" uninstall --confirm >/dev/null
-install -m 0755 "$TEMP/prior-codex-watch" "$BIN"
-"$BIN" install --confirm >/dev/null
-"$BIN" doctor >/dev/null
+if [[ -n "$PRIOR_ROOT" ]]; then
+  # Roll back both binary and state, prove the prior release still opens its
+  # original schema, then upgrade once more to the candidate.
+  bash "$PACKAGE_ROOT/scripts/uninstall.sh" --confirm >/dev/null
+  rm -f "$CODEX_USAGE_WATCH_HOME/state.sqlite3-wal" "$CODEX_USAGE_WATCH_HOME/state.sqlite3-shm"
+  cp "$TEMP/prior-state.sqlite3" "$CODEX_USAGE_WATCH_HOME/state.sqlite3"
+  INSTALL_HOOKS=1 bash "$PRIOR_ROOT/scripts/install.sh" >/dev/null
+  "$PREFIX/bin/codex-5h" doctor >/dev/null
+  bash "$PRIOR_ROOT/scripts/uninstall.sh" --confirm >/dev/null
+  INSTALL_HOOKS=1 bash "$PACKAGE_ROOT/scripts/install.sh" >/dev/null
+  "$BIN" refresh >/dev/null
+  "$BIN" doctor >/dev/null
+fi
 
 bash "$PACKAGE_ROOT/scripts/uninstall.sh" --confirm >/dev/null
 test ! -e "$BIN"

@@ -28,7 +28,7 @@ mod window_replay;
 
 use window_replay::{insert_snapshots, rebuild_windows};
 
-const SCHEMA_VERSION: i64 = 11;
+const SCHEMA_VERSION: i64 = 12;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(2);
 const HOOK_BUSY_TIMEOUT: Duration = Duration::from_millis(250);
 
