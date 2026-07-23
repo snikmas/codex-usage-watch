@@ -14,11 +14,11 @@ each record before summarizing it:
 python3 scripts/validate-acceptance-record.py RECORD.json
 ```
 
-The fixed allowlist intentionally permits timestamps, numeric usage readings,
-artifact identity, compatibility identity, scenarios, warning milestones, and
-controlled usability note codes only. Ground-truth error is accepted only when
-the record says the comparison is identity-safe and the absolute error is
-mathematically consistent.
+The fixed allowlist intentionally permits timezone-aware chronological
+timestamps, numeric usage readings, controlled artifact and compatibility
+identifiers, scenarios, warning milestones, and controlled usability note codes
+only. Ground-truth error is accepted only when the record says the comparison is
+identity-safe and the absolute error is mathematically consistent.
 
 ## Stage 14: longitudinal accuracy and understanding
 
@@ -49,8 +49,10 @@ Give the tester only the published archive, its `SHA256SUMS`, README, and the
 documents and scripts inside the archive. On Ubuntu 25.10 x86_64, first run:
 
 ```bash
+tar -xzf codex-usage-watch-VERSION-x86_64-unknown-linux-gnu.tar.gz
+cd codex-usage-watch-VERSION-x86_64-unknown-linux-gnu
 bash scripts/verify-release-lifecycle.sh \
-  codex-usage-watch-VERSION-x86_64-unknown-linux-gnu.tar.gz SHA256SUMS
+  ../codex-usage-watch-VERSION-x86_64-unknown-linux-gnu.tar.gz ../SHA256SUMS
 ```
 
 Then perform the real-user checks that an isolated script cannot prove:

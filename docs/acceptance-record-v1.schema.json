@@ -25,10 +25,10 @@
       "additionalProperties": false,
       "required": ["os", "architecture", "codex_version", "artifact_version", "artifact_sha256", "compatibility_result", "compatibility_identity"],
       "properties": {
-        "os": { "type": "string", "minLength": 1 },
-        "architecture": { "type": "string", "minLength": 1 },
-        "codex_version": { "type": "string", "minLength": 1 },
-        "artifact_version": { "type": "string", "minLength": 1 },
+        "os": { "enum": ["Ubuntu 25.10", "macOS"] },
+        "architecture": { "enum": ["x86_64", "arm64", "x86_64-unknown-linux-gnu", "aarch64-apple-darwin"] },
+        "codex_version": { "type": "string", "pattern": "^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$" },
+        "artifact_version": { "type": "string", "pattern": "^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$" },
         "artifact_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "compatibility_result": { "enum": ["compatible", "review", "degraded"] },
         "compatibility_identity": {
@@ -36,10 +36,10 @@
           "additionalProperties": false,
           "required": ["plan_type", "model_slug", "service_tier", "schema_fingerprint"],
           "properties": {
-            "plan_type": { "type": "string" },
-            "model_slug": { "type": "string" },
-            "service_tier": { "type": "string" },
-            "schema_fingerprint": { "type": "string" }
+            "plan_type": { "enum": ["free", "plus", "pro", "team", "business", "enterprise", "education", "unknown"] },
+            "model_slug": { "$ref": "#/$defs/safeToken" },
+            "service_tier": { "enum": ["default", "priority", "flex", "unknown"] },
+            "schema_fingerprint": { "$ref": "#/$defs/safeToken" }
           }
         }
       }
@@ -106,6 +106,7 @@
     }
   },
   "$defs": {
-    "understanding": { "enum": ["clear", "unclear", "not_observed"] }
+    "understanding": { "enum": ["clear", "unclear", "not_observed"] },
+    "safeToken": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+:-]{0,127}$" }
   }
 }
