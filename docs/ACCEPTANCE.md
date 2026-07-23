@@ -4,6 +4,10 @@ This file records only sanitized product evidence. It must never contain Codex
 session text, transcript paths, account identifiers, prompts, responses,
 reasoning, tool arguments, command output, or source code.
 
+The project is complete for its frozen Ubuntu experimental-beta scope. The open
+records below are optional evidence for stronger accuracy, stability, or
+platform-support claims; they do not represent missing product features.
+
 ## Evidence format
 
 Longitudinal and tester observations use
