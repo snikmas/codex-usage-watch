@@ -14,36 +14,64 @@ import sys
 ROOT_KEYS = {
     "schema_version", "recorded_at", "observer_role", "environment", "window",
     "reading", "ground_truth", "scenarios", "warnings_emitted", "usability",
+    "lifecycle",
 }
 IDENTITY_KEYS = {"plan_type", "model_slug", "service_tier", "schema_fingerprint"}
 SCENARIOS = {"normal", "low_activity", "stale", "missing_data", "threshold_crossing", "concurrent_sessions", "weekly_reset"}
 UNDERSTANDING = {"clear", "unclear", "not_observed"}
 NOTE_CODES = {"no_help_needed", "needed_public_docs", "needed_unpublished_help", "wording_unclear", "threshold_too_early", "threshold_too_late", "duplicate_notice", "privacy_wording_clear", "hook_trust_unclear"}
+OPERATING_SYSTEMS = {"Ubuntu 25.10", "macOS"}
+ARCHITECTURES = {"x86_64", "arm64", "x86_64-unknown-linux-gnu", "aarch64-apple-darwin"}
+PLAN_TYPES = {"free", "plus", "pro", "team", "business", "enterprise", "education", "unknown"}
+SERVICE_TIERS = {"default", "priority", "flex", "unknown"}
+SAFE_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+:-]{0,127}")
+SAFE_VERSION = re.compile(r"[0-9A-Za-z][0-9A-Za-z.+-]{0,63}")
+LIFECYCLE_STATUS = {"passed", "failed", "not_observed"}
+LIFECYCLE_KEYS = {
+    "checksum_verified", "install", "hook_review", "hook_trust", "real_hooks",
+    "setup", "status", "refresh", "history", "analyze", "doctor", "backup",
+    "upgrade", "rollback", "uninstall", "state_retained",
+    "unrelated_hooks_preserved", "private_modes_verified", "public_docs_only",
+}
+REAL_HOOKS = {"SessionStart", "UserPromptSubmit", "Stop"}
 
 
 def fail(message: str) -> None:
     raise ValueError(message)
 
 
-def exact_keys(value: object, keys: set[str], where: str) -> dict:
+def exact_keys(
+    value: object,
+    keys: set[str],
+    where: str,
+    optional: set[str] | frozenset[str] = frozenset(),
+) -> dict:
     if not isinstance(value, dict):
         fail(f"{where} must be an object")
-    missing = keys - value.keys()
+    missing = (keys - optional) - value.keys()
     extra = value.keys() - keys
     if missing or extra:
         fail(f"{where} fields mismatch: missing={sorted(missing)}, extra={sorted(extra)}")
     return value
 
 
-def timestamp(value: object, where: str, nullable: bool = False) -> None:
+def timestamp(value: object, where: str, nullable: bool = False) -> dt.datetime | None:
     if value is None and nullable:
-        return
+        return None
     if not isinstance(value, str):
         fail(f"{where} must be an RFC 3339 timestamp")
     try:
-        dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as error:
         fail(f"{where} is not an RFC 3339 timestamp: {error}")
+    if "T" not in value or parsed.tzinfo is None or parsed.utcoffset() is None:
+        fail(f"{where} must include a time and UTC offset")
+    return parsed
+
+
+def safe_token(value: object, where: str, pattern: re.Pattern[str] = SAFE_TOKEN) -> None:
+    if not isinstance(value, str) or not pattern.fullmatch(value):
+        fail(f"{where} must be a controlled, content-free identifier")
 
 
 def number(value: object, where: str, nullable: bool = False) -> None:
@@ -53,29 +81,64 @@ def number(value: object, where: str, nullable: bool = False) -> None:
         fail(f"{where} must be a finite non-negative number")
 
 
-def validate(record: object) -> None:
-    root = exact_keys(record, ROOT_KEYS, "record")
+def validate(record: object) -> dict:
+    root = exact_keys(record, ROOT_KEYS, "record", {"lifecycle"})
     if root["schema_version"] != 1:
         fail("schema_version must be 1")
-    timestamp(root["recorded_at"], "recorded_at")
+    recorded_at = timestamp(root["recorded_at"], "recorded_at")
     if root["observer_role"] not in {"maintainer", "independent_tester"}:
         fail("observer_role is invalid")
 
-    environment = exact_keys(root["environment"], {"os", "architecture", "codex_version", "artifact_version", "artifact_sha256", "compatibility_result", "compatibility_identity"}, "environment")
-    for key in ("os", "architecture", "codex_version", "artifact_version"):
-        if not isinstance(environment[key], str) or not environment[key]:
-            fail(f"environment.{key} must be a non-empty string")
+    environment = exact_keys(
+        root["environment"],
+        {
+            "os", "architecture", "codex_version", "artifact_version",
+            "artifact_sha256", "artifact_source", "compatibility_result",
+            "compatibility_identity",
+        },
+        "environment",
+        {"artifact_source"},
+    )
+    if environment["os"] not in OPERATING_SYSTEMS:
+        fail("environment.os is invalid")
+    if environment["architecture"] not in ARCHITECTURES:
+        fail("environment.architecture is invalid")
+    safe_token(environment["codex_version"], "environment.codex_version", SAFE_VERSION)
+    safe_token(environment["artifact_version"], "environment.artifact_version", SAFE_VERSION)
     if not isinstance(environment["artifact_sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", environment["artifact_sha256"]):
         fail("environment.artifact_sha256 must be 64 lowercase hexadecimal characters")
+    if environment.get("artifact_source") not in {
+        None,
+        "published_release",
+        "ci_artifact",
+        "local_candidate",
+    }:
+        fail("environment.artifact_source is invalid")
     if environment["compatibility_result"] not in {"compatible", "review", "degraded"}:
         fail("environment.compatibility_result is invalid")
     identity = exact_keys(environment["compatibility_identity"], IDENTITY_KEYS, "environment.compatibility_identity")
-    if any(not isinstance(value, str) for value in identity.values()):
-        fail("compatibility identity values must be strings")
+    if identity["plan_type"] not in PLAN_TYPES:
+        fail("environment.compatibility_identity.plan_type is invalid")
+    if identity["service_tier"] not in SERVICE_TIERS:
+        fail("environment.compatibility_identity.service_tier is invalid")
+    safe_token(identity["model_slug"], "environment.compatibility_identity.model_slug")
+    safe_token(identity["schema_fingerprint"], "environment.compatibility_identity.schema_fingerprint")
 
     window = exact_keys(root["window"], {"started_at", "ends_at", "observed_at"}, "window")
-    for key, value in window.items():
-        timestamp(value, f"window.{key}", nullable=True)
+    started_at = timestamp(window["started_at"], "window.started_at", nullable=True)
+    ends_at = timestamp(window["ends_at"], "window.ends_at", nullable=True)
+    observed_at = timestamp(window["observed_at"], "window.observed_at", nullable=True)
+    timestamps = (started_at, ends_at, observed_at)
+    if any(value is None for value in timestamps) and any(value is not None for value in timestamps):
+        fail("window timestamps must be either all present or all null")
+    if started_at is not None and ends_at is not None and observed_at is not None:
+        if not started_at < ends_at:
+            fail("window.started_at must be before window.ends_at")
+        if not started_at <= observed_at <= ends_at:
+            fail("window.observed_at must be within the window")
+        assert recorded_at is not None
+        if recorded_at < observed_at:
+            fail("recorded_at must not be before window.observed_at")
 
     reading = exact_keys(root["reading"], {"five_hour_percent", "value_source", "weekly_movement_points", "freshness"}, "reading")
     number(reading["five_hour_percent"], "reading.five_hour_percent", nullable=True)
@@ -117,12 +180,49 @@ def validate(record: object) -> None:
     if not isinstance(notes, list) or len(notes) != len(set(notes)) or not set(notes).issubset(NOTE_CODES):
         fail("usability.note_codes must be a unique list of allowed values")
 
+    if "lifecycle" in root:
+        lifecycle = exact_keys(root["lifecycle"], LIFECYCLE_KEYS, "lifecycle")
+        for key in LIFECYCLE_KEYS - {"real_hooks"}:
+            if lifecycle[key] not in LIFECYCLE_STATUS:
+                fail(f"lifecycle.{key} is invalid")
+        hooks = lifecycle["real_hooks"]
+        if not isinstance(hooks, list) or len(hooks) != len(set(hooks)) or not set(hooks).issubset(REAL_HOOKS):
+            fail("lifecycle.real_hooks must be a unique list of known hook events")
+
     # The fixed field allowlist is intentional: it prevents transcript paths,
     # account IDs, prompt text, and arbitrary free-form notes from entering evidence.
     encoded_keys = {key.lower() for key in walk_keys(root)}
     forbidden = {"prompt", "response", "reasoning", "tool_arguments", "command_output", "source_code", "transcript_path", "account_id", "email"}
     if encoded_keys & forbidden:
         fail(f"record contains forbidden private fields: {sorted(encoded_keys & forbidden)}")
+    return root
+
+
+def require_stage_15(record: dict) -> None:
+    environment = record["environment"]
+    if "lifecycle" not in record:
+        fail("Stage 15 requires lifecycle evidence")
+    lifecycle = record["lifecycle"]
+    if record["observer_role"] != "independent_tester":
+        fail("Stage 15 requires observer_role independent_tester")
+    if environment["os"] != "Ubuntu 25.10" or environment["architecture"] not in {
+        "x86_64",
+        "x86_64-unknown-linux-gnu",
+    }:
+        fail("Stage 15 requires Ubuntu 25.10 x86_64")
+    if environment.get("artifact_source") != "published_release":
+        fail("Stage 15 requires an exact published release artifact")
+    failed = [
+        key
+        for key in LIFECYCLE_KEYS - {"real_hooks"}
+        if lifecycle[key] != "passed"
+    ]
+    if failed:
+        fail(f"Stage 15 lifecycle checks are incomplete: {sorted(failed)}")
+    if set(lifecycle["real_hooks"]) != REAL_HOOKS:
+        fail("Stage 15 requires all three real Codex hooks")
+    if "needed_unpublished_help" in record["usability"]["note_codes"]:
+        fail("Stage 15 cannot pass when unpublished help was needed")
 
 
 def walk_keys(value: object):
@@ -138,10 +238,13 @@ def walk_keys(value: object):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("record", type=pathlib.Path)
+    parser.add_argument("--require-stage", choices=("15",))
     arguments = parser.parse_args()
     try:
         record = json.loads(arguments.record.read_text(encoding="utf-8"))
-        validate(record)
+        validated = validate(record)
+        if arguments.require_stage == "15":
+            require_stage_15(validated)
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
         print(f"acceptance record: FAIL: {error}", file=sys.stderr)
         return 2

@@ -15,6 +15,27 @@ Codex and turns the change into a local estimate:
 
 This is only a local estimate, not official OpenAI usage or billing data.
 
+## Project status
+
+This is a feature-complete experimental beta, not a finished stable release.
+The core tracker, reset-aware accounting, privacy controls, packaging, upgrade
+and rollback checks, and automated Ubuntu/macOS artifact lifecycles are
+implemented.
+
+The latest public release is
+[`v0.1.0-beta.1`](https://github.com/snikmas/codex-watch/releases/tag/v0.1.0-beta.1).
+The repository is preparing beta.2. Stable or broadly supported claims remain
+blocked until all of these external acceptance checks are observed:
+
+- five naturally elapsed five-hour windows with sanitized accuracy/usability
+  evidence;
+- one independent user completing the published-artifact lifecycle on Ubuntu
+  25.10 x86_64 using public instructions only;
+- the exact published Apple Silicon artifact completing the lifecycle on a real
+  Mac.
+
+See [acceptance evidence](docs/ACCEPTANCE.md) for the live checklist.
+
 ## Four ways to see the output
 
 ### 1. Terminal
@@ -67,15 +88,16 @@ screen.
 
 ## Install
 
-The supported experimental beta is Ubuntu 25.10 x86_64. Apple Silicon macOS
-artifact and CI work is a preview until the published artifact completes a real
-Mac lifecycle; Intel macOS remains source-preview-only with no release artifact,
-and Windows installation remains unsupported. See the
-[acceptance evidence](docs/ACCEPTANCE.md) and [macOS preview](docs/MACOS.md) for
-the exact boundaries. Codex CLI is required.
+The published experimental beta targets Ubuntu 25.10 x86_64. Its automated
+clean-container lifecycle passes, but independent-user acceptance is still
+open, so it is not yet a stable or broadly supported release. Apple Silicon
+macOS artifact and CI work remains preview-only until a published artifact
+passes on a real Mac. Intel macOS is source-preview-only with no release
+artifact, and Windows installation is unsupported. Codex CLI is required.
 
-For the supported Ubuntu beta, download the x86_64 archive and `SHA256SUMS`
-from the same GitHub release into a clean directory. Verify before extracting:
+For the Ubuntu beta, download the x86_64 archive and `SHA256SUMS` from the same
+[GitHub release](https://github.com/snikmas/codex-watch/releases) into a clean
+directory. Verify before extracting:
 
 ```bash
 sha256sum -c SHA256SUMS
@@ -93,8 +115,8 @@ Contributors can instead install from source with Rust 1.85 or newer:
 Clone the project and run:
 
 ```bash
-git clone https://github.com/snikmas/codex-usage-watch.git
-cd codex-usage-watch
+git clone https://github.com/snikmas/codex-watch.git
+cd codex-watch
 make test
 make lint
 PREFIX="$HOME/.local" INSTALL_HOOKS=1 scripts/install.sh
@@ -118,6 +140,24 @@ setup with:
 If `codex-watch` is not found in a new terminal, either use the full path above
 or add `~/.local/bin` to your `PATH`.
 
+## Independent Ubuntu acceptance
+
+An independent tester should use only the published archive, `SHA256SUMS`,
+README, and files packaged inside the archive. After completing the full
+lifecycle and a content-free real Codex turn, copy
+`docs/acceptance-record-stage15.example.json`, replace its synthetic values, and
+run:
+
+```bash
+python3 scripts/validate-acceptance-record.py \
+  --require-stage 15 RECORD.json
+```
+
+This strict check rejects maintainer evidence, local/CI artifacts, missing
+checksum or lifecycle steps, untrusted/missing real hooks, and any run that
+needed unpublished help. Passing automation alone does not satisfy the
+independent-user gate.
+
 ## Optional history import
 
 By default, `setup --skip-import` starts from now and does not read old
@@ -138,7 +178,8 @@ source code.
 
 ## Backup, upgrade, and rollback
 
-Create an integrity-checked backup before an upgrade:
+Create an integrity-checked backup before an upgrade and keep the previous
+verified binary:
 
 ```bash
 codex-watch backup "$HOME/codex-usage-watch-backup.sqlite3" --confirm
@@ -156,9 +197,10 @@ install -m 0755 ./codex-watch.previous "$HOME/.local/bin/codex-watch"
 "$HOME/.local/bin/codex-watch" doctor
 ```
 
-Rollback changes the executable and owned hook commands only; it does not
-downgrade the database schema. Keep the backup until the older binary has passed
-`doctor` against the retained state.
+Database migrations are forward-only. If the older binary rejects the upgraded
+database, stop Codex and restore the pre-upgrade SQLite backup before running
+the older binary. Do not try to make an older binary open a newer schema. Keep
+the backup until the restored binary passes `doctor`.
 
 ## How the estimate works
 
@@ -239,6 +281,8 @@ Run the second command from the cloned project directory.
 - Apple Silicon macOS has automated build/lifecycle coverage but remains preview
   until real-Mac published-artifact acceptance succeeds. Intel macOS is
   source-preview-only with no artifact; Windows installation is unsupported.
+- Longitudinal accuracy/usability evidence and independent Ubuntu acceptance
+  remain open, so this is not yet a stable release.
 - The `/statusline` and `/status` additions require the separate custom Codex
   build; the normal installation only provides the terminal command and hooks.
 - The local database does not have automatic cleanup yet.

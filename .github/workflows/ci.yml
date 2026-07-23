@@ -62,7 +62,11 @@ jobs:
             target: aarch64-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: v0.1.0-beta.1
+          path: prior-source
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master, reviewed 2026-07-15
         with:
           toolchain: stable
@@ -72,13 +76,62 @@ jobs:
         run: |
           test "$(rustc -vV | sed -n 's/^host: //p')" = "${{ matrix.target }}"
       - run: bash scripts/smoke-install.sh
+      - name: Build pinned prior-version artifact
+        shell: bash
+        run: DIST_DIR="$RUNNER_TEMP/prior-dist" bash prior-source/scripts/package-release.sh
       - run: bash scripts/package-release.sh
       - name: Verify exact host artifact lifecycle
         shell: bash
         run: |
           archive="target/release-dist/codex-usage-watch-$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)-${{ matrix.target }}.tar.gz"
+          prior_archive="$RUNNER_TEMP/prior-dist/codex-usage-watch-0.1.0-beta.1-${{ matrix.target }}.tar.gz"
           bash scripts/test-privacy-scan.sh
-          bash scripts/verify-release-lifecycle.sh "$archive" target/release-dist/SHA256SUMS
+          bash scripts/verify-release-lifecycle.sh \
+            "$archive" target/release-dist/SHA256SUMS \
+            "$prior_archive" "$RUNNER_TEMP/prior-dist/SHA256SUMS"
+
+  clean-ubuntu-25-10:
+    name: Clean Ubuntu 25.10 lifecycle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master, reviewed 2026-07-15
+        with:
+          toolchain: stable
+      - run: bash scripts/package-release.sh
+      - name: Collect current and published prior artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/ubuntu-acceptance/current" "$RUNNER_TEMP/ubuntu-acceptance/prior"
+          cp target/release-dist/codex-usage-watch-*-x86_64-unknown-linux-gnu.tar.gz \
+            target/release-dist/SHA256SUMS \
+            "$RUNNER_TEMP/ubuntu-acceptance/current/"
+          cp scripts/verify-release-lifecycle.sh "$RUNNER_TEMP/ubuntu-acceptance/"
+          gh release download v0.1.0-beta.1 \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir "$RUNNER_TEMP/ubuntu-acceptance/prior" \
+            --pattern 'codex-usage-watch-0.1.0-beta.1-x86_64-unknown-linux-gnu.tar.gz' \
+            --pattern 'SHA256SUMS'
+      - name: Verify in a clean Ubuntu 25.10 container
+        shell: bash
+        run: |
+          docker run --rm --platform linux/amd64 \
+            -v "$RUNNER_TEMP/ubuntu-acceptance:/acceptance:ro" \
+            ubuntu:25.10@sha256:7cc5e35f6567ee8c66d2abb4aab0fd866669e6207c237c3a8f0947a5c7f17092 \
+            bash -c '
+              set -euo pipefail
+              grep -q "^VERSION_ID=\"25.10\"$" /etc/os-release
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -qq
+              apt-get install -y -qq ca-certificates python3 >/dev/null
+              current="$(find /acceptance/current -name "*-x86_64-unknown-linux-gnu.tar.gz" -print -quit)"
+              bash /acceptance/verify-release-lifecycle.sh \
+                "$current" /acceptance/current/SHA256SUMS \
+                /acceptance/prior/codex-usage-watch-0.1.0-beta.1-x86_64-unknown-linux-gnu.tar.gz \
+                /acceptance/prior/SHA256SUMS
+            '
 
   exact-artifact:
     name: Linux exact artifact, privacy, and permissions

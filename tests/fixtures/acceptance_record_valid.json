@@ -8,6 +8,7 @@
     "codex_version": "0.146.0",
     "artifact_version": "0.1.0-beta.1",
     "artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "artifact_source": "published_release",
     "compatibility_result": "compatible",
     "compatibility_identity": {
       "plan_type": "plus",
@@ -43,5 +44,26 @@
     "over_100": "not_observed",
     "notice_usefulness": "useful",
     "note_codes": ["no_help_needed", "privacy_wording_clear"]
+  },
+  "lifecycle": {
+    "checksum_verified": "not_observed",
+    "install": "not_observed",
+    "hook_review": "not_observed",
+    "hook_trust": "not_observed",
+    "real_hooks": [],
+    "setup": "not_observed",
+    "status": "not_observed",
+    "refresh": "not_observed",
+    "history": "not_observed",
+    "analyze": "not_observed",
+    "doctor": "not_observed",
+    "backup": "not_observed",
+    "upgrade": "not_observed",
+    "rollback": "not_observed",
+    "uninstall": "not_observed",
+    "state_retained": "not_observed",
+    "unrelated_hooks_preserved": "not_observed",
+    "private_modes_verified": "not_observed",
+    "public_docs_only": "not_observed"
   }
 }
