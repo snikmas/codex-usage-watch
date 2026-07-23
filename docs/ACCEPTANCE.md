@@ -14,11 +14,21 @@ each record before summarizing it:
 python3 scripts/validate-acceptance-record.py RECORD.json
 ```
 
-The fixed allowlist intentionally permits timestamps, numeric usage readings,
-artifact identity, compatibility identity, scenarios, warning milestones, and
-controlled usability note codes only. Ground-truth error is accepted only when
-the record says the comparison is identity-safe and the absolute error is
-mathematically consistent.
+Independent Ubuntu testers should copy
+[`acceptance-record-stage15.example.json`](acceptance-record-stage15.example.json),
+replace every synthetic environment/reading value with their content-free
+observation, and use the stricter Stage 15 gate:
+
+```bash
+python3 scripts/validate-acceptance-record.py \
+  --require-stage 15 RECORD.json
+```
+
+The fixed allowlist intentionally permits timezone-aware chronological
+timestamps, numeric usage readings, controlled artifact and compatibility
+identifiers, scenarios, warning milestones, and controlled usability note codes
+only. Ground-truth error is accepted only when the record says the comparison is
+identity-safe and the absolute error is mathematically consistent.
 
 ## Stage 14: longitudinal accuracy and understanding
 
@@ -49,8 +59,10 @@ Give the tester only the published archive, its `SHA256SUMS`, README, and the
 documents and scripts inside the archive. On Ubuntu 25.10 x86_64, first run:
 
 ```bash
+tar -xzf codex-usage-watch-VERSION-x86_64-unknown-linux-gnu.tar.gz
+cd codex-usage-watch-VERSION-x86_64-unknown-linux-gnu
 bash scripts/verify-release-lifecycle.sh \
-  codex-usage-watch-VERSION-x86_64-unknown-linux-gnu.tar.gz SHA256SUMS
+  ../codex-usage-watch-VERSION-x86_64-unknown-linux-gnu.tar.gz ../SHA256SUMS
 ```
 
 Then perform the real-user checks that an isolated script cannot prove:
@@ -66,6 +78,12 @@ Then perform the real-user checks that an isolated script cannot prove:
 4. Record any unpublished help with the controlled
    `needed_unpublished_help` note code. A run with that code does not pass.
 5. Check that the privacy wording and Unix file modes are understandable.
+
+The Stage 15 validator passes only an independent tester on Ubuntu 25.10 x86_64
+using a published release, all three real hooks, every required lifecycle step,
+public documentation only, and no unpublished help. The automated
+`Clean Ubuntu 25.10 lifecycle` CI job exercises the artifact in a blank
+`ubuntu:25.10` container, but it does not replace the human tester.
 
 The full lifecycle must be repeated after any blocking fix. The successful
 artifact checksum, OS, architecture, Codex version, and artifact version remain

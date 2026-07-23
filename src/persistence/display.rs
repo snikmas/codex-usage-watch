@@ -134,13 +134,15 @@ fn read_display(
         String,
         String,
         Option<f64>,
+        Option<String>,
     );
     let row: Option<CurrentRow> = transaction
         .query_row(
             "SELECT started_at, ends_at, latest_observed_at, latest_used_percent,
                     calibration_weekly_points, accumulated_weekly_points,
                     calibration_id, calibration_confidence, boundary_kind,
-                    boundary_at, server_five_hour_percent
+                    boundary_at, server_five_hour_percent,
+                    server_five_hour_observed_at
              FROM windows WHERE lifecycle = 'current'",
             [],
             |row| {
@@ -156,6 +158,7 @@ fn read_display(
                     row.get(8)?,
                     row.get(9)?,
                     row.get(10)?,
+                    row.get(11)?,
                 ))
             },
         )
@@ -172,6 +175,7 @@ fn read_display(
         boundary_kind,
         boundary_at,
         server_five_hour_percent,
+        server_five_hour_observed_at,
     )) = row
     else {
         return Ok(unknown_display(
@@ -186,6 +190,10 @@ fn read_display(
     let start = parse_timestamp(&start)?;
     let end = parse_timestamp(&end)?;
     let observed = parse_timestamp(&observed)?;
+    let server_five_hour_observed_at = server_five_hour_observed_at
+        .as_deref()
+        .map(parse_timestamp)
+        .transpose()?;
     let unsupported_at: Option<String> = transaction
         .query_row(
             "SELECT observed_at FROM diagnostic_events
@@ -222,8 +230,10 @@ fn read_display(
     let age = (now - observed).num_seconds().max(0);
     let stale = now >= end || now - observed > config.stale_after();
     let local_estimate = weekly_points / calibration * 100.0;
-    let fresh_server_five_hour =
-        server_five_hour_percent.filter(|_| now - observed <= config.stale_after());
+    let fresh_server_five_hour = server_five_hour_percent
+        .zip(server_five_hour_observed_at)
+        .filter(|(_, server_observed_at)| now - *server_observed_at <= config.stale_after())
+        .map(|(value, _)| value);
     let (five_hour_value, five_hour_value_source) = fresh_server_five_hour
         .map(|value| (value, "real_server_five_hour".to_string()))
         .unwrap_or((local_estimate, "local_calibrated_estimate".to_string()));

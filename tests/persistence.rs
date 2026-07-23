@@ -511,7 +511,7 @@ fn sqlite_replay_ignores_one_second_reset_jitter_and_older_epochs() {
 fn migration_creates_the_stage_three_schema_and_wal_database() {
     let temp = TempDir::new().unwrap();
     let store = StateStore::open_in(temp.path(), TrackerConfig::default()).unwrap();
-    assert_eq!(store.schema_version().unwrap(), 11);
+    assert_eq!(store.schema_version().unwrap(), 12);
 
     let connection = Connection::open(&store.paths().database).unwrap();
     let tables: Vec<String> = connection
@@ -646,7 +646,7 @@ fn schema_v1_migrates_without_losing_snapshots_or_windows() {
     drop(connection);
 
     let store = StateStore::open_in(temp.path(), TrackerConfig::default()).unwrap();
-    assert_eq!(store.schema_version().unwrap(), 11);
+    assert_eq!(store.schema_version().unwrap(), 12);
     assert_eq!(store.snapshot_count().unwrap(), 1);
     let connection = Connection::open(&database).unwrap();
     let window: (f64, f64) = connection
@@ -916,6 +916,50 @@ fn fresh_real_five_hour_window_has_priority_over_local_estimate() {
         outcome.persisted.display.five_hour_value_source.as_deref(),
         Some("real_server_five_hour")
     );
+}
+
+#[test]
+fn weekly_only_updates_preserve_real_five_hour_value_without_refreshing_its_age() {
+    let temp = TempDir::new().unwrap();
+    let transcript = temp.path().join("mixed.jsonl");
+    let dual = fs::read_to_string(fixture("real_dual_window.jsonl")).unwrap();
+    let weekly_only = fs::read_to_string(fixture("real_weekly_only.jsonl"))
+        .unwrap()
+        .lines()
+        .nth(1)
+        .unwrap()
+        .replace("2030-01-01T12:05:00Z", "2030-01-01T12:06:00Z")
+        .replace("\"used_percent\":5.0", "\"used_percent\":58.0");
+    fs::write(&transcript, format!("{dual}{weekly_only}\n")).unwrap();
+
+    let mut store =
+        StateStore::open_in(temp.path().join("state"), TrackerConfig::default()).unwrap();
+    let fresh = store
+        .ingest_transcript(
+            &transcript,
+            &IngestOptions {
+                now: dt("2030-01-01T12:06:00Z"),
+                future_tolerance: TimeDelta::minutes(5),
+            },
+        )
+        .unwrap()
+        .persisted
+        .display;
+    assert_eq!(fresh.five_hour_estimate_percent, Some(1.0));
+    assert_eq!(
+        fresh.five_hour_value_source.as_deref(),
+        Some("real_server_five_hour")
+    );
+
+    let aged = store
+        .ingest([], dt("2030-01-01T12:21:00Z"))
+        .unwrap()
+        .display;
+    assert_eq!(
+        aged.five_hour_value_source.as_deref(),
+        Some("local_calibrated_estimate")
+    );
+    assert_ne!(aged.five_hour_estimate_percent, Some(1.0));
 }
 
 #[test]

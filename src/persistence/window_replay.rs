@@ -64,6 +64,7 @@ struct ReplayWindow {
     latest_source_file: String,
     latest_byte_offset: i64,
     server_five_hour_percent: Option<f64>,
+    server_five_hour_observed_at: Option<DateTime<Utc>>,
     calibration: f64,
     calibration_id: String,
     calibration_confidence: CalibrationConfidence,
@@ -281,8 +282,9 @@ pub(super) fn rebuild_windows(
                  calibration_weekly_points, accumulated_weekly_points,
                  last_emitted_milestone, lifecycle, calibration_id,
                  calibration_confidence, boundary_kind, boundary_at,
-                 latest_source_file, latest_byte_offset, server_five_hour_percent
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                 latest_source_file, latest_byte_offset, server_five_hour_percent,
+                 server_five_hour_observed_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 window.started_at.to_rfc3339(),
                 window.ends_at.to_rfc3339(),
@@ -299,6 +301,9 @@ pub(super) fn rebuild_windows(
                 window.latest_source_file,
                 window.latest_byte_offset,
                 window.server_five_hour_percent,
+                window
+                    .server_five_hour_observed_at
+                    .map(|value| value.to_rfc3339()),
             ],
         )?;
         if let Some(milestone) = window.last_milestone {
@@ -532,6 +537,11 @@ fn new_replay_window(
             .five_hour
             .as_ref()
             .map(|value| value.used_percent),
+        server_five_hour_observed_at: item
+            .observation
+            .five_hour
+            .as_ref()
+            .map(|_| item.observation.observed_at),
         calibration,
         calibration_id,
         calibration_confidence,
@@ -579,11 +589,10 @@ fn update_latest(window: &mut ReplayWindow, item: &ReplayItem) {
     }
     window.latest_source_file = item.source_file.clone();
     window.latest_byte_offset = item.byte_offset;
-    window.server_five_hour_percent = item
-        .observation
-        .five_hour
-        .as_ref()
-        .map(|value| value.used_percent);
+    if let Some(five_hour) = item.observation.five_hour.as_ref() {
+        window.server_five_hour_percent = Some(five_hour.used_percent);
+        window.server_five_hour_observed_at = Some(item.observation.observed_at);
+    }
 }
 
 fn persist_reset_event(
